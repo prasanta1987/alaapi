@@ -21,7 +21,7 @@ export function AppContent() {
   const isInCall = location.pathname.startsWith('/room/');
 
   return (
-    <div className="flex flex-col h-full h-[100dvh] w-screen bg-gray-950 text-gray-100 overflow-hidden select-none">
+    <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 overflow-hidden select-none">
       {!isInCall && (
         <Navbar
           onOpenProfile={() => setProfileOpen(true)}
@@ -29,28 +29,37 @@ export function AppContent() {
         />
       )}
 
-      <Routes>
-        <Route
-          path="/"
-          element={<LobbyPage onOpenAudioSettings={() => setAudioSettingsOpen(true)} />}
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <DashboardPage
-              onOpenProfile={() => setProfileOpen(true)}
-              onOpenAudioSettings={() => setAudioSettingsOpen(true)}
+      {isInCall ? (
+        <div className="flex-1 w-full h-full overflow-hidden">
+          <Routes>
+            <Route path="/room/:roomId" element={<CallStudioPage />} />
+          </Routes>
+        </div>
+      ) : (
+        <main className="flex-1 w-full overflow-y-auto overflow-x-hidden">
+          <Routes>
+            <Route
+              path="/"
+              element={<LobbyPage onOpenAudioSettings={() => setAudioSettingsOpen(true)} />}
             />
-          }
-        />
-        <Route path="/editroll" element={<EditRolePage />} />
-        <Route path="/editroles" element={<EditRolePage />} />
-        <Route path="/room/:roomId" element={<CallStudioPage />} />
-        <Route
-          path="*"
-          element={<LobbyPage onOpenAudioSettings={() => setAudioSettingsOpen(true)} />}
-        />
-      </Routes>
+            <Route
+              path="/dashboard"
+              element={
+                <DashboardPage
+                  onOpenProfile={() => setProfileOpen(true)}
+                  onOpenAudioSettings={() => setAudioSettingsOpen(true)}
+                />
+              }
+            />
+            <Route path="/editroll" element={<EditRolePage />} />
+            <Route path="/editroles" element={<EditRolePage />} />
+            <Route
+              path="*"
+              element={<LobbyPage onOpenAudioSettings={() => setAudioSettingsOpen(true)} />}
+            />
+          </Routes>
+        </main>
+      )}
 
       {/* Global Call & Settings Overlays */}
       <IncomingCallModal />

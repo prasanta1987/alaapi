@@ -136,7 +136,7 @@ export function DashboardPage({ onOpenProfile, onOpenAudioSettings }) {
   });
 
   return (
-    <div className="flex-1 flex flex-col p-3 sm:p-6 max-w-6xl w-full mx-auto overflow-y-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl w-full mx-auto space-y-6">
       {/* Toast Alert for Call Result */}
       {callNotice && (
         <div className="p-3.5 bg-yellow-950/80 border border-yellow-600 text-yellow-300 rounded-2xl text-xs sm:text-sm flex items-center justify-between shadow-lg">

@@ -26,7 +26,7 @@ export function LobbyPage({ onOpenAudioSettings }) {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-3 sm:px-6 py-2 overflow-y-auto lg:overflow-hidden select-none">
+    <div className="min-h-full flex flex-col items-center justify-center px-3 sm:px-6 py-4 select-none">
       <div className="max-w-3xl w-full bg-gray-900/90 backdrop-blur rounded-2xl sm:rounded-3xl shadow-2xl p-4 sm:p-6 border border-gray-800 flex flex-col justify-between my-auto">
         {/* Header Title */}
         <header className="text-center mb-3 sm:mb-4">
