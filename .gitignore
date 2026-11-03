@@ -51,6 +51,8 @@ node_modules/
 dist/
 dist-ssr/
 
+backup_vanilla_v1/*
+
 # Local env files
 .env*.local
 
