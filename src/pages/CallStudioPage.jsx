@@ -19,6 +19,9 @@ import {
   toggleAudioMute,
   toggleVideoFeed,
   toggleCameraFacingMode,
+  setCameraFacingMode,
+  currentFacingMode,
+  isMobileDevice,
   handleDeviceSwitch,
   requestScreenWakeLock,
   releaseScreenWakeLock,
@@ -41,7 +44,8 @@ import {
   Copy,
   Check,
   Radio,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -69,6 +73,29 @@ export function CallStudioPage() {
   // Available camera devices for in-call switching
   const [cameras, setCameras] = useState([]);
   const [selectedCam, setSelectedCam] = useState('');
+
+  // Call running duration timer
+  const [callDuration, setCallDuration] = useState(0);
+
+  useEffect(() => {
+    const timerInterval = setInterval(() => {
+      setCallDuration(prev => prev + 1);
+    }, 1000);
+
+    return () => {
+      clearInterval(timerInterval);
+    };
+  }, []);
+
+  const formatDuration = (totalSeconds) => {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // 1. Initial setup and lifecycle
   useEffect(() => {
@@ -147,8 +174,17 @@ export function CallStudioPage() {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoDevices = devices.filter(d => d.kind === 'videoinput');
           setCameras(videoDevices);
-          if (videoDevices.length > 0) {
+
+          // Detect active track's actual deviceId and facingMode
+          const activeTrack = videoTracks[0];
+          const activeSettings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
+          if (activeSettings.deviceId) {
+            setSelectedCam(activeSettings.deviceId);
+          } else if (videoDevices.length > 0) {
             setSelectedCam(videoDevices[0].deviceId);
+          }
+          if (activeSettings.facingMode) {
+            setCameraFacingMode(activeSettings.facingMode);
           }
         }
 
@@ -336,28 +372,66 @@ export function CallStudioPage() {
     setIsVideoOff(stopped);
   };
 
-  // Switch camera: cycles through connected cameras if multiple exist, or toggles facing mode on mobile
+  // Switch camera: toggles between front and back camera on mobile (Motorola/Android/iOS) or cycles webcams on desktop
   const handleFlipCamera = async () => {
     if (!hasLocalVideo) return;
 
-    if (cameras.length > 1) {
-      const currentIndex = cameras.findIndex(c => c.deviceId === selectedCam);
-      const nextIndex = (currentIndex + 1) % cameras.length;
-      const nextCamId = cameras[nextIndex].deviceId;
-      setSelectedCam(nextCamId);
+    const isMobile = isMobileDevice();
+
+    if (isMobile) {
+      // Toggle facing mode: front ('user') <-> back ('environment')
+      const nextFacing = currentFacingMode === 'user' ? 'environment' : 'user';
+
+      // If multiple camera sensors are reported, find a sensor matching the desired facing mode
+      let targetCamId = '';
+      if (cameras.length > 1) {
+        const matchingCam = cameras.find(c => {
+          const label = (c.label || '').toLowerCase();
+          if (nextFacing === 'environment') {
+            return label.includes('back') || label.includes('rear') || label.includes('environment') || label.includes('facing 0') || label.includes('camera 0');
+          } else {
+            return label.includes('front') || label.includes('user') || label.includes('facing 1') || label.includes('camera 1');
+          }
+        });
+
+        if (matchingCam) {
+          targetCamId = matchingCam.deviceId;
+        } else {
+          const currentIndex = cameras.findIndex(c => c.deviceId === selectedCam);
+          const nextIndex = (currentIndex + 1) % cameras.length;
+          targetCamId = cameras[nextIndex].deviceId;
+        }
+      }
+
+      setSelectedCam(targetCamId);
 
       await handleDeviceSwitch({
-        selectedCamId: nextCamId,
+        selectedCamId: targetCamId,
+        facingMode: nextFacing,
         localVideo: localVideoRef.current,
         pc
       });
     } else {
-      toggleCameraFacingMode();
-      await handleDeviceSwitch({
-        selectedCamId: '',
-        localVideo: localVideoRef.current,
-        pc
-      });
+      // Desktop: cycle through attached USB cameras
+      if (cameras.length > 1) {
+        const currentIndex = cameras.findIndex(c => c.deviceId === selectedCam);
+        const nextIndex = (currentIndex + 1) % cameras.length;
+        const nextCamId = cameras[nextIndex].deviceId;
+        setSelectedCam(nextCamId);
+
+        await handleDeviceSwitch({
+          selectedCamId: nextCamId,
+          localVideo: localVideoRef.current,
+          pc
+        });
+      } else {
+        const nextFacing = currentFacingMode === 'user' ? 'environment' : 'user';
+        await handleDeviceSwitch({
+          facingMode: nextFacing,
+          localVideo: localVideoRef.current,
+          pc
+        });
+      }
     }
 
     if (localStream) {
@@ -377,6 +451,12 @@ export function CallStudioPage() {
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
       {/* 1. Main Remote Stage */}
       <div id="remoteStage" className="relative flex-1 min-h-0 w-full h-full bg-black rounded-none overflow-hidden flex items-center justify-center">
+        {/* Call Timer Overlay Badge on Remote Stage (Desktop/Wide screens) */}
+        <div className="absolute top-3 left-3 z-20 hidden sm:flex items-center gap-1.5 px-3 py-1 bg-gray-900/85 backdrop-blur rounded-full border border-gray-700/80 font-mono text-xs font-semibold text-gray-200 shadow-md">
+          <Clock className="w-3.5 h-3.5 text-purple-400" />
+          <span>{formatDuration(callDuration)}</span>
+        </div>
+
         {/* Remote Video Stream */}
         <video
           ref={remoteVideoRef}
@@ -396,9 +476,15 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Mobile Top Overlay: Room ID & Status Pill */}
+        {/* Mobile Top Overlay: Room ID, Call Timer & Status Pill */}
         <div className="mobile-top-bar absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
           <div className="flex items-center gap-1.5 pointer-events-auto">
+            {/* Small Call Running Timer Pill on Mobile */}
+            <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-gray-200 flex items-center gap-1.5 border border-purple-500/30 shadow">
+              <Clock className="w-3 h-3 text-purple-400" />
+              <span>{formatDuration(callDuration)}</span>
+            </div>
+
             {remoteConnected && (
               <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-green-400 flex items-center gap-1.5 border border-green-500/30 shadow">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -468,7 +554,7 @@ export function CallStudioPage() {
           </div>
         </div>
 
-        {/* Middle: Session Info (Clean Desktop Card with NO DSP switches) */}
+        {/* Middle: Session Info (Clean Desktop Card with Room ID & Call Duration) */}
         <div className="sidebar-info-card flex-col gap-2.5 p-3.5 bg-gray-950/70 rounded-xl border border-gray-800 text-xs">
           {/* Room ID Row */}
           <div className="flex items-center justify-between bg-gray-900/90 px-3 py-2 rounded-lg border border-purple-500/30">
@@ -479,6 +565,21 @@ export function CallStudioPage() {
             <button onClick={copyRoomId} className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors">
               {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
             </button>
+          </div>
+
+          {/* Call Running Timer & Connection Status */}
+          <div className="flex items-center justify-between pt-1 border-t border-gray-800">
+            <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-1 rounded-md border border-purple-500/30">
+              <Clock className="w-3.5 h-3.5 text-purple-400" />
+              <span>{formatDuration(callDuration)}</span>
+            </div>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+              remoteConnected
+                ? 'bg-green-950/50 text-green-400 border-green-500/40'
+                : 'bg-gray-800 text-gray-400 border-gray-700'
+            }`}>
+              {remoteConnected ? '● Connected' : 'Waiting...'}
+            </span>
           </div>
 
           {/* Status Display */}

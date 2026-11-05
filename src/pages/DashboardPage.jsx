@@ -180,7 +180,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </span>
             </div>
             <p className="text-gray-400 text-xs mt-0.5">
-              {currentUser.email}  •  {userProfile?.instrument || 'Vocalist'}
+              {/* {currentUser.email}  •  {userProfile?.instrument || 'Vocalist'} */}
+              {userProfile?.instrument || 'Vocalist'}
             </p>
           </div>
         </div>
@@ -342,12 +343,12 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                           </span>
                         </div>
 
-                        {user.email && (
+                        {/* {user.email && (
                           <p className="text-xs text-gray-400 truncate font-mono">{user.email}</p>
                         )}
                         {user.phone && !user.email && (
                           <p className="text-xs text-gray-400 truncate">{user.phone}</p>
-                        )}
+                        )} */}
 
                         <div className="flex items-center gap-1.5 mt-1.5">
                           <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${user.role === 'admin'

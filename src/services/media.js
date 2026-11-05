@@ -341,40 +341,85 @@ export function toggleCameraFacingMode() {
   return currentFacingMode;
 }
 
+export function setCameraFacingMode(mode) {
+  if (mode === 'user' || mode === 'environment') {
+    currentFacingMode = mode;
+  }
+  return currentFacingMode;
+}
+
 // Clean in-call hardware switcher: switches camera or mic independently
-export async function handleDeviceSwitch({ selectedCamId, selectedMicId, localVideo, pc }) {
+export async function handleDeviceSwitch({ selectedCamId, selectedMicId, facingMode, localVideo, pc }) {
   if (!localStream) {
     localStream = new MediaStream();
   }
 
   const isMobile = isMobileDevice();
+  const targetFacing = facingMode || (currentFacingMode === 'user' ? 'environment' : 'user');
 
   // 1. Switch Video Track if camera requested or available
-  if (selectedCamId !== undefined) {
+  if (selectedCamId !== undefined || facingMode !== undefined) {
+    // CRITICAL for Android (e.g. Motorola Edge 50 Neo):
+    // Stop all old video tracks first so Android's camera HAL releases the hardware lock!
+    const oldVideoTracks = localStream.getVideoTracks();
+    oldVideoTracks.forEach(t => {
+      try { t.stop(); } catch (e) {}
+      localStream.removeTrack(t);
+    });
+
+    const videoConstraints = {};
+    if (selectedCamId) {
+      videoConstraints.deviceId = { ideal: selectedCamId };
+    }
+    if (facingMode || isMobile) {
+      videoConstraints.facingMode = { ideal: targetFacing };
+    }
+
+    if (!isMobile) {
+      videoConstraints.width = { ideal: 1280 };
+      videoConstraints.height = { ideal: 720 };
+      videoConstraints.aspectRatio = { ideal: 16 / 9 };
+    }
+
+    let tempStream = null;
     try {
-      const videoConstraints = selectedCamId
-        ? { deviceId: { exact: selectedCamId } }
-        : { facingMode: { ideal: currentFacingMode } };
-
-      if (!isMobile) {
-        videoConstraints.width = { ideal: 1280 };
-        videoConstraints.height = { ideal: 720 };
-        videoConstraints.aspectRatio = { ideal: 16 / 9 };
-      }
-
-      const tempStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
-      const newVideoTrack = tempStream.getVideoTracks()[0];
-
-      if (newVideoTrack) {
-        localStream.getVideoTracks().forEach(t => {
-          localStream.removeTrack(t);
-          t.stop();
+      tempStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+    } catch (e1) {
+      console.warn("[Media] Ideal camera constraints failed, attempting facingMode only:", e1);
+      try {
+        tempStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: targetFacing } }
         });
+      } catch (e2) {
+        console.warn("[Media] Ideal facingMode failed, attempting exact facingMode:", e2);
+        try {
+          tempStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: targetFacing } }
+          });
+        } catch (e3) {
+          console.warn("[Media] Exact facingMode failed, falling back to any available camera:", e3);
+          try {
+            tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (e4) {
+            console.error("[Media] Could not acquire video track during camera switch:", e4);
+          }
+        }
+      }
+    }
+
+    if (tempStream) {
+      const newVideoTrack = tempStream.getVideoTracks()[0];
+      if (newVideoTrack) {
         newVideoTrack.enabled = !isVideoStopped;
         localStream.addTrack(newVideoTrack);
 
+        const settings = newVideoTrack.getSettings ? newVideoTrack.getSettings() : {};
+        const actualFacing = settings.facingMode || targetFacing;
+        currentFacingMode = actualFacing;
+
         if (pc && pc.signalingState !== 'closed') {
-          const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+          const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video') ||
+                              pc.getSenders().find(s => s.dtlsTransport);
           if (videoSender) {
             await videoSender.replaceTrack(newVideoTrack);
           } else {
@@ -383,7 +428,7 @@ export async function handleDeviceSwitch({ selectedCamId, selectedMicId, localVi
         }
 
         if (localVideo) {
-          if (currentFacingMode === 'environment') {
+          if (actualFacing === 'environment') {
             localVideo.classList.remove('scale-x-[-1]');
           } else {
             localVideo.classList.add('scale-x-[-1]');
@@ -393,8 +438,6 @@ export async function handleDeviceSwitch({ selectedCamId, selectedMicId, localVi
           updateLocalVideoAspectRatio(localVideo);
         }
       }
-    } catch (camErr) {
-      console.warn("Could not switch camera device:", camErr);
     }
   }
 

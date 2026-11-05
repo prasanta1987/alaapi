@@ -15,15 +15,13 @@ import {
   MicOff,
   Check,
   Play,
-  Square,
   Sparkles,
   PhoneCall,
   RotateCcw,
   Headphones,
   CheckCircle2,
-  AlertCircle,
   Sliders,
-  Info
+  RefreshCw
 } from 'lucide-react';
 
 export function DeviceSetupModal({ isOpen, onClose }) {
@@ -47,6 +45,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [isPlayingChime, setIsPlayingChime] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isHardwarePreviewMirrored, setIsHardwarePreviewMirrored] = useState(false);
 
   // Test Call (Loopback recorder) states
   const [testCallState, setTestCallState] = useState('idle'); // 'idle' | 'recording' | 'playing'
@@ -55,17 +54,222 @@ export function DeviceSetupModal({ isOpen, onClose }) {
 
   // Refs for cleanup and testing
   const videoPreviewRef = useRef(null);
+  const testPreviewRef = useRef(null);
   const playbackVideoRef = useRef(null);
   const activeStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const animFrameRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const testCallTimerRef = useRef(null);
 
-  // Initialize and enumerate hardware devices
+  // Clean up all active streams, analyzers, and timers
+  const stopAllMedia = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (testCallTimerRef.current) {
+      clearInterval(testCallTimerRef.current);
+      testCallTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
+    if (activeStreamRef.current) {
+      try {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      activeStreamRef.current = null;
+    }
+    if (videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = null;
+    }
+    if (testPreviewRef.current) {
+      testPreviewRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+    setMicLevel(0);
+  };
+
+  // Setup dynamic VU meter via Web Audio API
+  const setupAudioMeter = (stream) => {
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    try {
+      if (audioContextRef.current) {
+        try { audioContextRef.current.close(); } catch (e) {}
+        audioContextRef.current = null;
+      }
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      audioContextRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.6;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const tickMeter = () => {
+        if (!activeStreamRef.current) return;
+        analyser.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const scaled = Math.min(100, Math.round((avg / 128) * 100));
+        setMicLevel(scaled);
+
+        animFrameRef.current = requestAnimationFrame(tickMeter);
+      };
+
+      tickMeter();
+    } catch (e) {
+      console.warn("Could not setup audio meter:", e);
+    }
+  };
+
+  // Starts preview stream for camera and microphone (Hardware Devices tab only)
+  const startHardwarePreview = async (camId, micId) => {
+    stopAllMedia();
+
+    const constraints = {};
+    if (camId) {
+      constraints.video = { deviceId: { exact: camId }, width: { ideal: 640 }, height: { ideal: 480 } };
+    } else {
+      constraints.video = true;
+    }
+
+    if (micId) {
+      constraints.audio = { deviceId: { exact: micId } };
+    } else {
+      constraints.audio = true;
+    }
+
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      try {
+        const fallback = {
+          video: camId ? { deviceId: { ideal: camId }, width: { ideal: 640 }, height: { ideal: 480 } } : true,
+          audio: micId ? { deviceId: { ideal: micId } } : true
+        };
+        stream = await navigator.mediaDevices.getUserMedia(fallback);
+      } catch (err2) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err3) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (err4) {
+            console.warn("Could not obtain audio or video for preview:", err4);
+          }
+        }
+      }
+    }
+
+    if (!stream) return;
+    activeStreamRef.current = stream;
+
+    // Attach video preview
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack && videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = stream;
+      videoPreviewRef.current.play().catch(e => console.warn("Preview play error:", e));
+      setCameraActive(true);
+    } else {
+      setCameraActive(false);
+    }
+
+    // Attach audio analyzer for VU meter
+    setupAudioMeter(stream);
+  };
+
+  // Starts media stream specifically for Test Call using selected devices & DSP filters
+  const startTestCallStream = async (camId, micId, dsp) => {
+    stopAllMedia();
+
+    const videoConstraints = camId
+      ? { deviceId: { exact: camId }, width: { ideal: 640 }, height: { ideal: 480 } }
+      : true;
+
+    const audioConstraints = {
+      echoCancellation: Boolean(dsp?.echoCancellation),
+      googEchoCancellation: Boolean(dsp?.echoCancellation),
+      noiseSuppression: Boolean(dsp?.noiseSuppression),
+      googNoiseSuppression: Boolean(dsp?.noiseSuppression),
+      googHighpassFilter: Boolean(dsp?.noiseSuppression),
+      autoGainControl: Boolean(dsp?.autoGainControl),
+      googAutoGainControl: Boolean(dsp?.autoGainControl)
+    };
+    if (micId) {
+      audioConstraints.deviceId = { exact: micId };
+    }
+
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints });
+    } catch (err) {
+      try {
+        const fallback = {
+          video: camId ? { deviceId: { ideal: camId } } : true,
+          audio: { ...audioConstraints, deviceId: micId ? { ideal: micId } : undefined }
+        };
+        stream = await navigator.mediaDevices.getUserMedia(fallback);
+      } catch (err2) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        } catch (err3) {
+          console.warn("Could not acquire test call media stream:", err3);
+        }
+      }
+    }
+
+    if (!stream) return;
+    activeStreamRef.current = stream;
+
+    // Attach live preview in Test Call (unmirrored)
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack && testPreviewRef.current) {
+      testPreviewRef.current.srcObject = stream;
+      testPreviewRef.current.play().catch(e => console.warn("Test preview play error:", e));
+      setCameraActive(true);
+    } else {
+      setCameraActive(false);
+    }
+
+    // Attach VU meter
+    setupAudioMeter(stream);
+  };
+
+  // 1. Initialize & enumerate devices on modal open
   useEffect(() => {
     if (!isOpen) {
       stopAllMedia();
+      if (recordedBlobUrl) {
+        URL.revokeObjectURL(recordedBlobUrl);
+        setRecordedBlobUrl(null);
+      }
       return;
     }
 
@@ -91,7 +295,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
 
         const devices = await navigator.mediaDevices.enumerateDevices();
 
-        // Release temp stream
+        // Release temp stream immediately
         if (tempStream) {
           tempStream.getTracks().forEach(t => t.stop());
         }
@@ -119,8 +323,12 @@ export function DeviceSetupModal({ isOpen, onClose }) {
         setSelectedMicId(micToUse);
         setSelectedSpeakerId(speakerToUse);
 
-        // Start hardware preview with chosen devices
-        startHardwarePreview(camToUse, micToUse);
+        // ONLY start camera/mic preview if user is currently on the Hardware Devices tab
+        if (activeTab === 'devices') {
+          startHardwarePreview(camToUse, micToUse);
+        } else if (activeTab === 'testcall') {
+          startTestCallStream(camToUse, micToUse, getAudioSettings());
+        }
       } catch (err) {
         console.warn("Could not enumerate hardware devices:", err);
       }
@@ -133,135 +341,90 @@ export function DeviceSetupModal({ isOpen, onClose }) {
     };
   }, [isOpen]);
 
-  // Clean up all active streams and audio contexts
-  const stopAllMedia = () => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-    if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close();
-      } catch (e) {}
-      audioContextRef.current = null;
-    }
-    if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach(t => t.stop());
-      activeStreamRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {}
-    }
-    if (videoPreviewRef.current) {
-      videoPreviewRef.current.srcObject = null;
-    }
-    setCameraActive(false);
-    setMicLevel(0);
-    setTestCallState('idle');
-  };
+  // 2. React to Tab switching:
+  // - "devices": camera and mic active for live hardware verification
+  // - "audio": ALL hardware connections dropped
+  // - "testcall": user-selected devices accessed for loopback test
+  useEffect(() => {
+    if (!isOpen) return;
 
-  // Starts or updates preview stream for camera and microphone
-  const startHardwarePreview = async (camId, micId) => {
-    try {
-      if (activeStreamRef.current) {
-        activeStreamRef.current.getTracks().forEach(t => t.stop());
-        activeStreamRef.current = null;
+    if (activeTab === 'devices') {
+      if (selectedCamId || selectedMicId || cameras.length > 0 || mics.length > 0) {
+        startHardwarePreview(selectedCamId, selectedMicId);
       }
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-        animFrameRef.current = null;
-      }
+    } else if (activeTab === 'testcall') {
+      setTestCallState('idle');
+      startTestCallStream(selectedCamId, selectedMicId, audioSettings);
+    } else if (activeTab === 'audio') {
+      // Hardware connections MUST be completely dropped on Audio & DSP tab
+      stopAllMedia();
+    }
 
-      const constraints = {};
-      if (camId) {
-        constraints.video = { deviceId: { exact: camId }, width: { ideal: 640 }, height: { ideal: 480 } };
+    return () => {
+      stopAllMedia();
+    };
+  }, [activeTab, isOpen]);
+
+  // 3. Drop all camera and mic connections when user leaves the window (blur, tab switch, minimize)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // User left tab or minimized browser window -> Drop all connections immediately!
+        stopAllMedia();
       } else {
-        constraints.video = true;
-      }
-
-      if (micId) {
-        constraints.audio = { deviceId: { exact: micId } };
-      } else {
-        constraints.audio = true;
-      }
-
-      let stream = null;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (err) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio });
-        } catch (audioErr) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: constraints.video });
-          } catch (vidErr) {
-            console.warn("Could not obtain audio or video for preview:", vidErr);
+        // User returned to window
+        if (activeTab === 'devices') {
+          startHardwarePreview(selectedCamId, selectedMicId);
+        } else if (activeTab === 'testcall') {
+          if (testCallState !== 'playing') {
+            startTestCallStream(selectedCamId, selectedMicId, audioSettings);
           }
         }
       }
+    };
 
-      if (!stream) return;
-      activeStreamRef.current = stream;
+    const handlePageHide = () => {
+      stopAllMedia();
+    };
 
-      // Attach video preview
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
-        videoPreviewRef.current.play().catch(e => console.warn("Preview play prevented:", e));
-        setCameraActive(true);
-      } else {
-        setCameraActive(false);
-      }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
 
-      // Attach audio analyzer for VU meter
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioCtx();
-        audioContextRef.current = ctx;
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+    };
+  }, [isOpen, activeTab, selectedCamId, selectedMicId, audioSettings, testCallState]);
 
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.6;
-        source.connect(analyser);
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const tickMeter = () => {
-          if (!activeStreamRef.current) return;
-          analyser.getByteFrequencyData(dataArray);
-
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-          }
-          const avg = sum / dataArray.length;
-          const scaled = Math.min(100, Math.round((avg / 128) * 100));
-          setMicLevel(scaled);
-
-          animFrameRef.current = requestAnimationFrame(tickMeter);
-        };
-
-        tickMeter();
-      }
-    } catch (e) {
-      console.warn("Hardware preview error:", e);
-    }
+  // Tab change handler
+  const handleTabChange = (newTab) => {
+    if (newTab === activeTab) return;
+    stopAllMedia();
+    setActiveTab(newTab);
   };
 
   // Change camera
   const handleCamSelect = (camId) => {
     setSelectedCamId(camId);
-    startHardwarePreview(camId, selectedMicId);
+    if (activeTab === 'devices') {
+      startHardwarePreview(camId, selectedMicId);
+    } else if (activeTab === 'testcall') {
+      startTestCallStream(camId, selectedMicId, audioSettings);
+    }
   };
 
   // Change microphone
   const handleMicSelect = (micId) => {
     setSelectedMicId(micId);
-    startHardwarePreview(selectedCamId, micId);
+    if (activeTab === 'devices') {
+      startHardwarePreview(selectedCamId, micId);
+    } else if (activeTab === 'testcall') {
+      startTestCallStream(selectedCamId, micId, audioSettings);
+    }
   };
 
   // Toggle DSP settings
@@ -277,14 +440,12 @@ export function DeviceSetupModal({ isOpen, onClose }) {
   const handleApplyPreset = (preset) => {
     let updated = {};
     if (preset === 'music') {
-      // 48kHz lossless stereo dynamics for vocals/music
       updated = {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false
       };
     } else if (preset === 'speech') {
-      // Standard video call filters for conversational speech
       updated = {
         echoCancellation: true,
         noiseSuppression: true,
@@ -302,6 +463,10 @@ export function DeviceSetupModal({ isOpen, onClose }) {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const ctx = new AudioCtx();
+
+      if (ctx.setSinkId && selectedSpeakerId) {
+        ctx.setSinkId(selectedSpeakerId).catch(() => {});
+      }
 
       // Play C-major acoustic chord (C5, E5, G5)
       const chord = [523.25, 659.25, 783.99];
@@ -336,12 +501,23 @@ export function DeviceSetupModal({ isOpen, onClose }) {
   };
 
   // Start 5-Second Test Call Recording
-  const handleStartTestCall = () => {
-    if (!activeStreamRef.current) return;
+  const handleStartTestCall = async () => {
     if (testCallState === 'recording') return;
 
+    if (!activeStreamRef.current) {
+      await startTestCallStream(selectedCamId, selectedMicId, audioSettings);
+    }
+
+    if (!activeStreamRef.current) {
+      console.warn("No stream available for test recording.");
+      return;
+    }
+
     recordedChunksRef.current = [];
-    setRecordedBlobUrl(null);
+    if (recordedBlobUrl) {
+      URL.revokeObjectURL(recordedBlobUrl);
+      setRecordedBlobUrl(null);
+    }
     setTestCallState('recording');
     setCountdown(5);
 
@@ -360,16 +536,21 @@ export function DeviceSetupModal({ isOpen, onClose }) {
         const url = URL.createObjectURL(blob);
         setRecordedBlobUrl(url);
         setTestCallState('playing');
+        // Stop active hardware capture while listening to playback to prevent audio loopback/speaker feedback
+        stopAllMedia();
       };
 
       recorder.start();
 
       let secondsLeft = 5;
-      const interval = setInterval(() => {
+      testCallTimerRef.current = setInterval(() => {
         secondsLeft -= 1;
         setCountdown(secondsLeft);
         if (secondsLeft <= 0) {
-          clearInterval(interval);
+          if (testCallTimerRef.current) {
+            clearInterval(testCallTimerRef.current);
+            testCallTimerRef.current = null;
+          }
           if (recorder.state === 'recording') {
             recorder.stop();
           }
@@ -379,6 +560,26 @@ export function DeviceSetupModal({ isOpen, onClose }) {
       console.warn("Could not start MediaRecorder for test call:", err);
       setTestCallState('idle');
     }
+  };
+
+  // Re-record another test sample
+  const handleRecordAnotherSample = () => {
+    if (recordedBlobUrl) {
+      URL.revokeObjectURL(recordedBlobUrl);
+      setRecordedBlobUrl(null);
+    }
+    setTestCallState('idle');
+    startTestCallStream(selectedCamId, selectedMicId, audioSettings);
+  };
+
+  // Close modal and drop all media
+  const handleClose = () => {
+    stopAllMedia();
+    if (recordedBlobUrl) {
+      URL.revokeObjectURL(recordedBlobUrl);
+      setRecordedBlobUrl(null);
+    }
+    onClose();
   };
 
   // Save preferred devices and audio settings
@@ -393,8 +594,8 @@ export function DeviceSetupModal({ isOpen, onClose }) {
     setSaveSuccess(true);
     setTimeout(() => {
       setSaveSuccess(false);
-      onClose();
-    }, 900);
+      handleClose();
+    }, 700);
   };
 
   if (!isOpen) return null;
@@ -418,7 +619,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -428,7 +629,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
         {/* Tab Navigation */}
         <div className="px-5 pt-3 pb-1 border-b border-gray-800/80 flex items-center gap-2 shrink-0 bg-gray-950/20 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('devices')}
+            onClick={() => handleTabChange('devices')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               activeTab === 'devices'
                 ? 'bg-purple-600 text-white shadow'
@@ -440,7 +641,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
           </button>
 
           <button
-            onClick={() => setActiveTab('audio')}
+            onClick={() => handleTabChange('audio')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               activeTab === 'audio'
                 ? 'bg-purple-600 text-white shadow'
@@ -452,7 +653,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
           </button>
 
           <button
-            onClick={() => setActiveTab('testcall')}
+            onClick={() => handleTabChange('testcall')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               activeTab === 'testcall'
                 ? 'bg-purple-600 text-white shadow'
@@ -505,10 +706,10 @@ export function DeviceSetupModal({ isOpen, onClose }) {
                   </div>
 
                   {/* Live Video Preview Box */}
-                  <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-gray-700/80 flex items-center justify-center shadow-inner">
+                  <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-gray-700/80 flex items-center justify-center shadow-inner group">
                     <video
                       ref={videoPreviewRef}
-                      className={`w-full h-full object-cover transform scale-x-[-1] ${cameraActive ? '' : 'hidden'}`}
+                      className={`w-full h-full object-cover ${isHardwarePreviewMirrored ? 'transform scale-x-[-1]' : ''} ${cameraActive ? '' : 'hidden'}`}
                       autoPlay
                       playsInline
                       muted
@@ -518,6 +719,17 @@ export function DeviceSetupModal({ isOpen, onClose }) {
                         <VideoOff className="w-8 h-8 text-gray-600 mb-1" />
                         <span className="text-[11px] font-semibold text-gray-400">Camera Inactive</span>
                       </div>
+                    )}
+                    {cameraActive && (
+                      <button
+                        type="button"
+                        onClick={() => setIsHardwarePreviewMirrored(prev => !prev)}
+                        title={isHardwarePreviewMirrored ? "Switch to Normal Orientation" : "Mirror Video Preview"}
+                        className="absolute top-2 right-2 px-2 py-0.5 rounded-lg bg-black/70 hover:bg-black/90 text-[10px] text-gray-300 hover:text-white border border-gray-700 transition-all flex items-center gap-1 shadow"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        <span>{isHardwarePreviewMirrored ? "Mirrored" : "Normal"}</span>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -572,7 +784,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
                     />
                   </div>
                   <p className="text-[10px] text-gray-400 mt-1">
-                    Unprocessed 48kHz audio captures true harmonic resonance without noise suppression gating.
+                    Live hardware input monitor with responsiveness calibration.
                   </p>
                 </div>
               </div>
@@ -621,7 +833,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
           )}
 
           {activeTab === 'audio' && (
-            /* Tab 2: Audio & Acoustic DSP Settings */
+            /* Tab 2: Audio & Acoustic DSP Settings (NO camera/mic held open) */
             <div className="space-y-4">
               {/* Vocal Teacher Tip */}
               <div className="bg-purple-950/40 border border-purple-800/60 rounded-2xl p-3.5 flex items-start gap-3">
@@ -739,45 +951,101 @@ export function DeviceSetupModal({ isOpen, onClose }) {
           )}
 
           {activeTab === 'testcall' && (
-            /* Tab 3: Test Call / Echo Loopback Diagnostic */
-            <div className="p-5 rounded-2xl bg-gray-950/70 border border-gray-800 space-y-4 text-center">
+            /* Tab 3: Test Call / Echo Loopback Diagnostic using Selected Devices */
+            <div className="p-4 sm:p-5 rounded-2xl bg-gray-950/70 border border-gray-800 space-y-4 text-center">
               <div className="max-w-md mx-auto">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-500/40 flex items-center justify-center mx-auto mb-2 text-purple-400 shadow-md">
-                  <PhoneCall className="w-6 h-6" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-500/40 flex items-center justify-center mx-auto mb-2 text-purple-400 shadow-md">
+                  <PhoneCall className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <h4 className="text-base font-bold text-white mb-1">Interactive Echo Loopback Test</h4>
-                <p className="text-xs text-gray-400 leading-relaxed">
+                <h4 className="text-sm sm:text-base font-bold text-white mb-1">Interactive Echo Loopback Test</h4>
+                <p className="text-[11px] sm:text-xs text-gray-400 leading-relaxed">
                   Record a 5-second sample speaking or singing into your mic. The app will immediately play it back so you can check your clarity, volume balance, and background acoustics.
                 </p>
+
+                {/* Selected devices badge */}
+                <div className="mt-2.5 inline-flex flex-wrap items-center justify-center gap-2 px-3 py-1 bg-gray-900 border border-gray-800 rounded-full text-[10px] text-gray-300">
+                  <span className="flex items-center gap-1 text-purple-300 font-medium">
+                    <Video className="w-3 h-3" />
+                    {cameras.find(c => c.deviceId === selectedCamId)?.label || (selectedCamId ? 'Selected Camera' : 'Camera')}
+                  </span>
+                  <span className="text-gray-600">•</span>
+                  <span className="flex items-center gap-1 text-purple-300 font-medium">
+                    <Mic className="w-3 h-3" />
+                    {mics.find(m => m.deviceId === selectedMicId)?.label || (selectedMicId ? 'Selected Mic' : 'Microphone')}
+                  </span>
+                </div>
               </div>
 
-              {testCallState === 'idle' && (
-                <div className="py-4">
-                  <button
-                    onClick={handleStartTestCall}
-                    className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-lg shadow-purple-900/40 transition-all inline-flex items-center gap-2"
-                  >
-                    <Play className="w-4 h-4 fill-white" />
-                    Start 5-Second Test Recording
-                  </button>
-                </div>
-              )}
-
-              {testCallState === 'recording' && (
-                <div className="py-6 flex flex-col items-center">
-                  <div className="w-16 h-16 rounded-full bg-red-600/30 border-2 border-red-500 flex items-center justify-center text-red-400 font-mono text-2xl font-black animate-pulse mb-2 shadow-lg shadow-red-900/50">
-                    {countdown}s
-                  </div>
-                  <span className="text-xs font-semibold text-red-300">Recording your voice... Speak or sing now!</span>
-                  <div className="h-2 w-48 bg-gray-800 rounded-full overflow-hidden mt-3 p-0.5">
-                    <div
-                      className="h-full bg-red-500 rounded-full transition-all duration-100"
-                      style={{ width: `${Math.max(5, micLevel)}%` }}
+              {/* IDLE OR RECORDING: Show Live Preview Box (UNMIRRORED) and VU meter */}
+              {(testCallState === 'idle' || testCallState === 'recording') && (
+                <div className="space-y-3 max-w-sm mx-auto">
+                  {/* Live Video Preview Box (Unmirrored) */}
+                  <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-gray-700 shadow-xl flex items-center justify-center">
+                    <video
+                      ref={testPreviewRef}
+                      className={`w-full h-full object-cover ${cameraActive ? '' : 'hidden'}`}
+                      autoPlay
+                      playsInline
+                      muted
                     />
+                    {!cameraActive && (
+                      <div className="flex flex-col items-center justify-center p-3 text-center text-gray-500">
+                        <VideoOff className="w-8 h-8 text-gray-600 mb-1" />
+                        <span className="text-[11px] font-semibold text-gray-400">Audio-Only Test (Camera Inactive)</span>
+                      </div>
+                    )}
+
+                    {/* Recording Overlay */}
+                    {testCallState === 'recording' && (
+                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center text-white p-3">
+                        <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-600 text-[10px] font-bold tracking-wider animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                          REC
+                        </div>
+                        <div className="w-14 h-14 rounded-full bg-red-600/40 border-2 border-red-500 flex items-center justify-center text-white font-mono text-2xl font-black shadow-lg shadow-red-900/50 mb-1">
+                          {countdown}s
+                        </div>
+                        <span className="text-xs font-semibold text-white">Speak or sing now!</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Live VU Meter during Test Call */}
+                  <div className="space-y-1 text-left px-1">
+                    <div className="flex justify-between text-[10px] text-gray-400 font-medium">
+                      <span>Mic Input Level</span>
+                      <span className="font-mono text-purple-300">{micLevel}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-gray-800 rounded-full overflow-hidden p-0.5 border border-gray-700">
+                      <div
+                        className={`h-full rounded-full transition-all duration-75 ${
+                          testCallState === 'recording'
+                            ? 'bg-red-500'
+                            : micLevel > 75
+                            ? 'bg-amber-400'
+                            : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.max(4, micLevel)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Start Recording Button */}
+                  {testCallState === 'idle' && (
+                    <div className="pt-2">
+                      <button
+                        onClick={handleStartTestCall}
+                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-lg shadow-purple-900/40 transition-all inline-flex items-center justify-center gap-2"
+                      >
+                        <Play className="w-4 h-4 fill-white" />
+                        Start 5-Second Test Recording
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
+              {/* PLAYING: Playback recorded sample (UNMIRRORED) */}
               {testCallState === 'playing' && recordedBlobUrl && (
                 <div className="py-2 space-y-3 flex flex-col items-center">
                   <span className="text-xs font-bold text-green-400 flex items-center gap-1.5">
@@ -788,15 +1056,15 @@ export function DeviceSetupModal({ isOpen, onClose }) {
                     <video
                       ref={playbackVideoRef}
                       src={recordedBlobUrl}
-                      className="w-full h-full object-cover transform scale-x-[-1]"
+                      className="w-full h-full object-cover"
                       autoPlay
                       controls
                       playsInline
                     />
                   </div>
                   <button
-                    onClick={handleStartTestCall}
-                    className="px-4 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    onClick={handleRecordAnotherSample}
+                    className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     Record Another Sample
@@ -821,7 +1089,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="px-3.5 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold transition-colors"
             >
               Cancel
