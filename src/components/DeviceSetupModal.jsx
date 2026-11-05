@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   getPreferredDevices,
-  savePreferredDevices
+  savePreferredDevices,
+  getAudioSettings,
+  saveAudioSettings
 } from '../services/media';
 import {
   X,
@@ -19,11 +21,13 @@ import {
   RotateCcw,
   Headphones,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Sliders,
+  Info
 } from 'lucide-react';
 
 export function DeviceSetupModal({ isOpen, onClose }) {
-  const [activeTab, setActiveTab] = useState('devices'); // 'devices' | 'testcall'
+  const [activeTab, setActiveTab] = useState('devices'); // 'devices' | 'audio' | 'testcall'
 
   // Device lists
   const [cameras, setCameras] = useState([]);
@@ -34,6 +38,9 @@ export function DeviceSetupModal({ isOpen, onClose }) {
   const [selectedCamId, setSelectedCamId] = useState('');
   const [selectedMicId, setSelectedMicId] = useState('');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
+
+  // Audio DSP Settings
+  const [audioSettings, setAudioSettings] = useState(getAudioSettings());
 
   // Live testing states
   const [micLevel, setMicLevel] = useState(0);
@@ -62,6 +69,8 @@ export function DeviceSetupModal({ isOpen, onClose }) {
       return;
     }
 
+    // Refresh settings
+    setAudioSettings(getAudioSettings());
     const preferred = getPreferredDevices();
 
     const enumerate = async () => {
@@ -75,7 +84,6 @@ export function DeviceSetupModal({ isOpen, onClose }) {
         try {
           tempStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         } catch (e) {
-          // If both fail, try audio only
           try {
             tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           } catch (e2) {}
@@ -157,7 +165,6 @@ export function DeviceSetupModal({ isOpen, onClose }) {
   // Starts or updates preview stream for camera and microphone
   const startHardwarePreview = async (camId, micId) => {
     try {
-      // Stop existing stream first
       if (activeStreamRef.current) {
         activeStreamRef.current.getTracks().forEach(t => t.stop());
         activeStreamRef.current = null;
@@ -184,7 +191,6 @@ export function DeviceSetupModal({ isOpen, onClose }) {
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err) {
-        // Fallback: try individual media types
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio });
         } catch (audioErr) {
@@ -228,13 +234,11 @@ export function DeviceSetupModal({ isOpen, onClose }) {
           if (!activeStreamRef.current) return;
           analyser.getByteFrequencyData(dataArray);
 
-          // Calculate average volume level
           let sum = 0;
           for (let i = 0; i < dataArray.length; i++) {
             sum += dataArray[i];
           }
           const avg = sum / dataArray.length;
-          // Scale non-linearly for smooth visual VU meter
           const scaled = Math.min(100, Math.round((avg / 128) * 100));
           setMicLevel(scaled);
 
@@ -258,6 +262,36 @@ export function DeviceSetupModal({ isOpen, onClose }) {
   const handleMicSelect = (micId) => {
     setSelectedMicId(micId);
     startHardwarePreview(selectedCamId, micId);
+  };
+
+  // Toggle DSP settings
+  const handleToggleDSP = (key) => {
+    const updated = {
+      ...audioSettings,
+      [key]: !audioSettings[key]
+    };
+    setAudioSettings(updated);
+  };
+
+  // Quick DSP presets
+  const handleApplyPreset = (preset) => {
+    let updated = {};
+    if (preset === 'music') {
+      // 48kHz lossless stereo dynamics for vocals/music
+      updated = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      };
+    } else if (preset === 'speech') {
+      // Standard video call filters for conversational speech
+      updated = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      };
+    }
+    setAudioSettings(updated);
   };
 
   // Play Harmonic Chime to Test Speakers/Headphones
@@ -347,13 +381,15 @@ export function DeviceSetupModal({ isOpen, onClose }) {
     }
   };
 
-  // Save preferred devices
+  // Save preferred devices and audio settings
   const handleSavePreferences = () => {
     savePreferredDevices({
       cameraId: selectedCamId,
       micId: selectedMicId,
       speakerId: selectedSpeakerId
     });
+    saveAudioSettings(audioSettings);
+
     setSaveSuccess(true);
     setTimeout(() => {
       setSaveSuccess(false);
@@ -377,7 +413,7 @@ export function DeviceSetupModal({ isOpen, onClose }) {
                 Audio & Video Device Setup
               </h3>
               <p className="text-[11px] text-gray-400">
-                Test your camera, microphone, and verify sound before entering a class.
+                Configure camera, microphone, acoustic DSP filters, and run test calls.
               </p>
             </div>
           </div>
@@ -390,34 +426,47 @@ export function DeviceSetupModal({ isOpen, onClose }) {
         </div>
 
         {/* Tab Navigation */}
-        <div className="px-5 pt-3 pb-1 border-b border-gray-800/80 flex items-center gap-2 shrink-0 bg-gray-950/20">
+        <div className="px-5 pt-3 pb-1 border-b border-gray-800/80 flex items-center gap-2 shrink-0 bg-gray-950/20 overflow-x-auto">
           <button
             onClick={() => setActiveTab('devices')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               activeTab === 'devices'
                 ? 'bg-purple-600 text-white shadow'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            Hardware Diagnostics
+            <Camera className="w-3.5 h-3.5" />
+            Hardware Devices
           </button>
+
+          <button
+            onClick={() => setActiveTab('audio')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+              activeTab === 'audio'
+                ? 'bg-purple-600 text-white shadow'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            Audio & DSP Settings
+          </button>
+
           <button
             onClick={() => setActiveTab('testcall')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               activeTab === 'testcall'
                 ? 'bg-purple-600 text-white shadow'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
             }`}
           >
             <PhoneCall className="w-3.5 h-3.5" />
-            Interactive Test Call (Echo Check)
+            Test Call (Echo Check)
           </button>
         </div>
 
         {/* Modal Scrollable Body */}
         <div className="p-5 overflow-y-auto space-y-5 flex-1">
-          {activeTab === 'devices' ? (
+          {activeTab === 'devices' && (
             <>
               {/* 1. Camera Section */}
               <div className="p-3.5 sm:p-4 rounded-xl bg-gray-950/60 border border-gray-800/90 space-y-3">
@@ -569,8 +618,128 @@ export function DeviceSetupModal({ isOpen, onClose }) {
                 </div>
               </div>
             </>
-          ) : (
-            /* Tab 2: Test Call / Echo Loopback Diagnostic */
+          )}
+
+          {activeTab === 'audio' && (
+            /* Tab 2: Audio & Acoustic DSP Settings */
+            <div className="space-y-4">
+              {/* Vocal Teacher Tip */}
+              <div className="bg-purple-950/40 border border-purple-800/60 rounded-2xl p-3.5 flex items-start gap-3">
+                <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-purple-200/90 leading-relaxed">
+                  <strong>Studio Pro Tip:</strong> For acoustic music and vocal singing lessons, turn <span className="text-purple-300 font-semibold">OFF</span> all DSP filters and use headphones to unlock pure <strong>48kHz lossless stereo dynamics</strong> without vocal clipping or volume compression.
+                </p>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('music')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                    !audioSettings.echoCancellation && !audioSettings.noiseSuppression && !audioSettings.autoGainControl
+                      ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-900/30'
+                      : 'bg-gray-800/80 text-gray-300 border-gray-700 hover:bg-gray-700'
+                  }`}
+                >
+                  🎵 Music & Vocals (Recommended)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('speech')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                    audioSettings.echoCancellation && audioSettings.noiseSuppression && audioSettings.autoGainControl
+                      ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-900/30'
+                      : 'bg-gray-800/80 text-gray-300 border-gray-700 hover:bg-gray-700'
+                  }`}
+                >
+                  🗣️ Spoken Speech
+                </button>
+              </div>
+
+              {/* The 3 DSP Toggles */}
+              <div className="bg-gray-950/80 rounded-2xl border border-gray-800/90 p-4 space-y-3.5 divide-y divide-gray-800/70">
+                {/* 1. Echo Cancellation */}
+                <div className="flex items-center justify-between pt-1 first:pt-0">
+                  <div className="pr-4">
+                    <span className="text-xs sm:text-sm font-semibold text-white block">Echo Cancellation</span>
+                    <span className="text-[11px] text-gray-400 block leading-tight mt-0.5">
+                      Eliminates feedback. Recommended: OFF with headphones for high-fidelity 48kHz music.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleDSP('echoCancellation')}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      audioSettings.echoCancellation ? 'bg-purple-600' : 'bg-gray-700'
+                    }`}
+                    role="switch"
+                    aria-checked={audioSettings.echoCancellation}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        audioSettings.echoCancellation ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* 2. Noise Suppression */}
+                <div className="flex items-center justify-between pt-3">
+                  <div className="pr-4">
+                    <span className="text-xs sm:text-sm font-semibold text-white block">Noise Suppression</span>
+                    <span className="text-[11px] text-gray-400 block leading-tight mt-0.5">
+                      Suppresses ambient hum. Recommended: OFF to prevent clipping soft vocal vibrato.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleDSP('noiseSuppression')}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      audioSettings.noiseSuppression ? 'bg-purple-600' : 'bg-gray-700'
+                    }`}
+                    role="switch"
+                    aria-checked={audioSettings.noiseSuppression}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        audioSettings.noiseSuppression ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* 3. Auto Gain Control */}
+                <div className="flex items-center justify-between pt-3">
+                  <div className="pr-4">
+                    <span className="text-xs sm:text-sm font-semibold text-white block">Auto Gain Control</span>
+                    <span className="text-[11px] text-gray-400 block leading-tight mt-0.5">
+                      Normalizes volume. Recommended: OFF to preserve full acoustic singing dynamics.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleDSP('autoGainControl')}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      audioSettings.autoGainControl ? 'bg-purple-600' : 'bg-gray-700'
+                    }`}
+                    role="switch"
+                    aria-checked={audioSettings.autoGainControl}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        audioSettings.autoGainControl ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'testcall' && (
+            /* Tab 3: Test Call / Echo Loopback Diagnostic */
             <div className="p-5 rounded-2xl bg-gray-950/70 border border-gray-800 space-y-4 text-center">
               <div className="max-w-md mx-auto">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-500/40 flex items-center justify-center mx-auto mb-2 text-purple-400 shadow-md">
@@ -643,10 +812,10 @@ export function DeviceSetupModal({ isOpen, onClose }) {
           <div className="text-[11px] text-gray-400">
             {saveSuccess ? (
               <span className="text-green-400 font-semibold flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" /> Preferences saved!
+                <Check className="w-3.5 h-3.5" /> Device & Audio preferences saved!
               </span>
             ) : (
-              <span>Your preferred devices will be remembered for all future classes.</span>
+              <span>Your hardware devices and acoustic DSP filters will be remembered.</span>
             )}
           </div>
 

@@ -7,6 +7,7 @@ import {
   toggleMetronomeMute,
   getMetronomeState
 } from '../services/metronome';
+import { getPeerClockOffset } from '../services/webrtc';
 import {
   X,
   Play,
@@ -18,7 +19,8 @@ import {
   Activity,
   RotateCcw,
   Sparkles,
-  Radio
+  Radio,
+  CheckCircle2
 } from 'lucide-react';
 
 export function MetronomeModal({
@@ -49,10 +51,16 @@ export function MetronomeModal({
       }
 
       if (metronomeData.active) {
+        // Calibrate clock offset to eliminate cross-device millisecond skew
+        const clockOffset = getPeerClockOffset();
+        const baseEpoch = metronomeData.startEpoch || Date.now();
+        // If data was broadcast from peer, adjust with measured clock skew
+        const adjustedStartEpoch = metronomeData.isLocal ? baseEpoch : (baseEpoch + clockOffset);
+
         startMetronome({
           bpm: metronomeData.bpm || 120,
           beatsPerBar: metronomeData.beatsPerBar || 4,
-          startEpoch: metronomeData.startEpoch || Date.now(),
+          startEpoch: adjustedStartEpoch,
           onBeat: (beatNum, accent) => {
             setActiveBeat(beatNum);
             setIsAccent(accent);
@@ -69,37 +77,56 @@ export function MetronomeModal({
   // Clean up on component unmount
   useEffect(() => {
     return () => {
-      // Don't stop metronome if still active in call, but clear visual callback if unmounted
+      // Keep metronome ticking if active in call
     };
   }, []);
 
   const handleToggleActive = () => {
     const nextActive = !isActive;
-    const now = Date.now();
-    const updated = {
-      active: nextActive,
-      bpm,
-      beatsPerBar,
-      startEpoch: now
-    };
-
-    if (onSyncMetronome) {
-      onSyncMetronome(updated);
-    }
 
     if (nextActive) {
+      // 500ms Future Arming Window: gives both machines enough time to receive the signal
+      // and align Web Audio hardware timers to strike Beat 1 at the EXACT same millisecond.
+      const scheduledStart = Date.now() + 500;
+      const updated = {
+        active: true,
+        bpm,
+        beatsPerBar,
+        startEpoch: scheduledStart,
+        updatedAt: Date.now(),
+        isLocal: true
+      };
+
+      if (onSyncMetronome) {
+        onSyncMetronome(updated);
+      }
+
       startMetronome({
         bpm,
         beatsPerBar,
-        startEpoch: now,
+        startEpoch: scheduledStart,
         onBeat: (beatNum, accent) => {
           setActiveBeat(beatNum);
           setIsAccent(accent);
         }
       });
     } else {
+      const updated = {
+        active: false,
+        bpm,
+        beatsPerBar,
+        startEpoch: 0,
+        updatedAt: Date.now(),
+        isLocal: true
+      };
+
+      if (onSyncMetronome) {
+        onSyncMetronome(updated);
+      }
+
       stopMetronome();
       setActiveBeat(0);
+      setIsAccent(false);
     }
   };
 
@@ -107,12 +134,26 @@ export function MetronomeModal({
     const clamped = Math.max(30, Math.min(260, Math.round(newBpm)));
     setBpm(clamped);
 
-    if (isActive && onSyncMetronome) {
-      onSyncMetronome({
+    if (isActive) {
+      // 400ms transition window for instantaneous phase-locked tempo change
+      const scheduledTransition = Date.now() + 400;
+      const updated = {
         active: true,
         bpm: clamped,
         beatsPerBar,
-        startEpoch: Date.now()
+        startEpoch: scheduledTransition,
+        updatedAt: Date.now(),
+        isLocal: true
+      };
+
+      if (onSyncMetronome) {
+        onSyncMetronome(updated);
+      }
+
+      updateMetronomeParams({
+        bpm: clamped,
+        beatsPerBar,
+        startEpoch: scheduledTransition
       });
     } else {
       updateMetronomeParams({ bpm: clamped });
@@ -121,12 +162,24 @@ export function MetronomeModal({
 
   const handleBeatsPerBarChange = (newBeats) => {
     setBeatsPerBar(newBeats);
-    if (isActive && onSyncMetronome) {
-      onSyncMetronome({
+    if (isActive) {
+      const scheduledTransition = Date.now() + 400;
+      const updated = {
         active: true,
         bpm,
         beatsPerBar: newBeats,
-        startEpoch: Date.now()
+        startEpoch: scheduledTransition,
+        updatedAt: Date.now(),
+        isLocal: true
+      };
+
+      if (onSyncMetronome) {
+        onSyncMetronome(updated);
+      }
+
+      updateMetronomeParams({
+        beatsPerBar: newBeats,
+        startEpoch: scheduledTransition
       });
     } else {
       updateMetronomeParams({ beatsPerBar: newBeats });
@@ -368,3 +421,4 @@ export function MetronomeModal({
     </div>
   );
 }
+

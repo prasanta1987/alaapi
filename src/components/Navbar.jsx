@@ -90,15 +90,16 @@ export function Navbar({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }
             </Link>
           )}
 
-          {/* Hardware Device Setup Trigger */}
+          {/* Hardware Device & Audio Settings Trigger */}
           <button
             onClick={handleOpenSettings}
-            title="Audio & Video Device Diagnostics"
+            title="Audio DSP Filters & Hardware Device Setup"
             className="px-2.5 py-1.5 rounded-lg text-gray-300 hover:text-purple-300 hover:bg-gray-800 transition-colors flex items-center gap-1.5 text-xs sm:text-sm"
           >
             <Settings2 className="w-3.5 h-3.5 text-purple-400" />
-            <span className="hidden sm:inline">Device Setup</span>
+            <span className="hidden sm:inline">Audio & Devices</span>
           </button>
+
         </div>
       </div>
 

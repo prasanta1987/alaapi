@@ -161,7 +161,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
             className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gray-800/80 hover:bg-gray-800 active:scale-95 text-gray-300 hover:text-white border border-gray-700/80 flex items-center justify-center gap-2 text-xs font-semibold shadow-sm transition-all group"
           >
             <Settings2 className="w-4 h-4 text-purple-400 group-hover:rotate-45 transition-transform" />
-            Audio & Video Device Settings (Mic, Camera & Test Call)
+            Audio & Video Device Settings (Mic, Camera, DSP & Test Call)
           </button>
         </div>
       </div>

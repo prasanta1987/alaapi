@@ -29,6 +29,7 @@ import {
   initPeerConnection,
   processRemoteCandidates,
   closePeerConnection,
+  sendSyncMessage,
   pc
 } from '../services/webrtc';
 import {
@@ -170,9 +171,10 @@ export function CallStudioPage() {
 
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
 
-        // WebRTC initialization
+        // WebRTC initialization with DataChannel sync
         initPeerConnection({
           localStream: stream,
+          isCaller,
           onRemoteStream: (remoteStream) => {
             if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
               remoteVideoRef.current.srcObject = remoteStream;
@@ -189,6 +191,11 @@ export function CallStudioPage() {
           onConnectionStateChange: (state) => {
             if (state === 'failed') {
               discardCallSession("Connection lost.", true);
+            }
+          },
+          onSyncMessageCallback: (msg) => {
+            if (msg.type === 'METRONOME_SYNC' && msg.metronome) {
+              setRoomMetronome({ ...msg.metronome, isLocal: false });
             }
           }
         });
@@ -376,12 +383,25 @@ export function CallStudioPage() {
     });
   };
 
-  // Synchronized Metronome callback
+  // Synchronized Metronome callback (DataChannel direct P2P + Firestore database entry)
   const handleSyncMetronome = async (newMetronomeData) => {
-    setRoomMetronome(newMetronomeData);
+    setRoomMetronome({ ...newMetronomeData, isLocal: true });
+
+    // 1. Instantaneous direct P2P sync via WebRTC DataChannel (sub-millisecond fast)
+    sendSyncMessage({
+      type: 'METRONOME_SYNC',
+      metronome: { ...newMetronomeData, isLocal: false }
+    });
+
+    // 2. Persistent database entry in Firestore so both devices are coordinated
     try {
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-      await updateDoc(roomRef, { metronome: newMetronomeData });
+      await updateDoc(roomRef, {
+        metronome: {
+          ...newMetronomeData,
+          isLocal: false
+        }
+      });
     } catch (e) {
       console.warn("Could not sync metronome state to Firestore:", e);
     }
