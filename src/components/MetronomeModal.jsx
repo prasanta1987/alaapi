@@ -7,7 +7,7 @@ import {
   toggleMetronomeMute,
   getMetronomeState
 } from '../services/metronome';
-import { getPeerClockOffset } from '../services/webrtc';
+import { convertRemoteEpochToLocal } from '../services/webrtc';
 import {
   X,
   Play,
@@ -26,8 +26,9 @@ import {
 export function MetronomeModal({
   isOpen,
   onClose,
-  metronomeData, // From Firestore room: { active, bpm, beatsPerBar, startEpoch }
-  onSyncMetronome // Callback to update Firestore room: (newMetronomeData) => void
+  metronomeData, // From Firestore room: { active, bpm, beatsPerBar, startEpoch, initiatorUid }
+  onSyncMetronome, // Callback to update Firestore room: (newMetronomeData) => void
+  currentUserId // UID of current user to know who initiated
 }) {
   const [bpm, setBpm] = useState(metronomeData?.bpm || 120);
   const [beatsPerBar, setBeatsPerBar] = useState(metronomeData?.beatsPerBar || 4);
@@ -40,7 +41,7 @@ export function MetronomeModal({
 
   const isActive = Boolean(metronomeData?.active);
 
-  // Sync state whenever remote peer updates metronome in Firestore
+  // Sync state whenever database updates metronome parameters
   useEffect(() => {
     if (metronomeData) {
       if (metronomeData.bpm && metronomeData.bpm !== bpm) {
@@ -51,16 +52,15 @@ export function MetronomeModal({
       }
 
       if (metronomeData.active) {
-        // Calibrate clock offset to eliminate cross-device millisecond skew
-        const clockOffset = getPeerClockOffset();
-        const baseEpoch = metronomeData.startEpoch || Date.now();
-        // If data was broadcast from peer, adjust with measured clock skew
-        const adjustedStartEpoch = metronomeData.isLocal ? baseEpoch : (baseEpoch + clockOffset);
+        // Both devices receive the database entry and compute their local start time
+        const isInitiator = currentUserId && metronomeData.initiatorUid === currentUserId;
+        const rawStart = metronomeData.startEpoch || Date.now();
+        const localStartEpoch = isInitiator ? rawStart : convertRemoteEpochToLocal(rawStart);
 
         startMetronome({
           bpm: metronomeData.bpm || 120,
           beatsPerBar: metronomeData.beatsPerBar || 4,
-          startEpoch: adjustedStartEpoch,
+          startEpoch: localStartEpoch,
           onBeat: (beatNum, accent) => {
             setActiveBeat(beatNum);
             setIsAccent(accent);
@@ -72,7 +72,7 @@ export function MetronomeModal({
         setIsAccent(false);
       }
     }
-  }, [metronomeData]);
+  }, [metronomeData, currentUserId]);
 
   // Clean up on component unmount
   useEffect(() => {
@@ -85,43 +85,33 @@ export function MetronomeModal({
     const nextActive = !isActive;
 
     if (nextActive) {
-      // 500ms Future Arming Window: gives both machines enough time to receive the signal
-      // and align Web Audio hardware timers to strike Beat 1 at the EXACT same millisecond.
-      const scheduledStart = Date.now() + 500;
-      const updated = {
+      // 800ms Scheduled Future Start:
+      // Writes to database first -> both devices receive the parameters -> both start natively at the exact same millisecond.
+      const scheduledStart = Date.now() + 800;
+      const payload = {
         active: true,
         bpm,
         beatsPerBar,
         startEpoch: scheduledStart,
-        updatedAt: Date.now(),
-        isLocal: true
+        initiatorUid: currentUserId || 'host',
+        initiatorTime: Date.now()
       };
 
       if (onSyncMetronome) {
-        onSyncMetronome(updated);
+        onSyncMetronome(payload);
       }
-
-      startMetronome({
-        bpm,
-        beatsPerBar,
-        startEpoch: scheduledStart,
-        onBeat: (beatNum, accent) => {
-          setActiveBeat(beatNum);
-          setIsAccent(accent);
-        }
-      });
     } else {
-      const updated = {
+      const payload = {
         active: false,
         bpm,
         beatsPerBar,
         startEpoch: 0,
-        updatedAt: Date.now(),
-        isLocal: true
+        initiatorUid: currentUserId || 'host',
+        initiatorTime: Date.now()
       };
 
       if (onSyncMetronome) {
-        onSyncMetronome(updated);
+        onSyncMetronome(payload);
       }
 
       stopMetronome();
@@ -135,26 +125,20 @@ export function MetronomeModal({
     setBpm(clamped);
 
     if (isActive) {
-      // 400ms transition window for instantaneous phase-locked tempo change
-      const scheduledTransition = Date.now() + 400;
-      const updated = {
+      // 600ms transition window for phase-locked tempo change on both devices
+      const scheduledTransition = Date.now() + 600;
+      const payload = {
         active: true,
         bpm: clamped,
         beatsPerBar,
         startEpoch: scheduledTransition,
-        updatedAt: Date.now(),
-        isLocal: true
+        initiatorUid: currentUserId || 'host',
+        initiatorTime: Date.now()
       };
 
       if (onSyncMetronome) {
-        onSyncMetronome(updated);
+        onSyncMetronome(payload);
       }
-
-      updateMetronomeParams({
-        bpm: clamped,
-        beatsPerBar,
-        startEpoch: scheduledTransition
-      });
     } else {
       updateMetronomeParams({ bpm: clamped });
     }
@@ -163,24 +147,19 @@ export function MetronomeModal({
   const handleBeatsPerBarChange = (newBeats) => {
     setBeatsPerBar(newBeats);
     if (isActive) {
-      const scheduledTransition = Date.now() + 400;
-      const updated = {
+      const scheduledTransition = Date.now() + 600;
+      const payload = {
         active: true,
         bpm,
         beatsPerBar: newBeats,
         startEpoch: scheduledTransition,
-        updatedAt: Date.now(),
-        isLocal: true
+        initiatorUid: currentUserId || 'host',
+        initiatorTime: Date.now()
       };
 
       if (onSyncMetronome) {
-        onSyncMetronome(updated);
+        onSyncMetronome(payload);
       }
-
-      updateMetronomeParams({
-        beatsPerBar: newBeats,
-        startEpoch: scheduledTransition
-      });
     } else {
       updateMetronomeParams({ beatsPerBar: newBeats });
     }

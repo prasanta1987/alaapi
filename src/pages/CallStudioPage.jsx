@@ -630,6 +630,7 @@ export function CallStudioPage() {
         onClose={() => setMetronomeOpen(false)}
         metronomeData={roomMetronome}
         onSyncMetronome={handleSyncMetronome}
+        currentUserId={currentUser?.uid}
       />
 
       {/* 4. Hardware Devices & Diagnostics Modal */}
