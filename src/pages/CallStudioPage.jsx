@@ -29,29 +29,19 @@ import {
   initPeerConnection,
   processRemoteCandidates,
   closePeerConnection,
-  sendSyncMessage,
   pc
 } from '../services/webrtc';
-import {
-  stopMetronome
-} from '../services/metronome';
-import { MetronomeModal } from '../components/MetronomeModal';
-import { DeviceSetupModal } from '../components/DeviceSetupModal';
 import {
   Mic,
   MicOff,
   Video,
   VideoOff,
   RefreshCw,
-  Settings,
   PhoneOff,
   Copy,
   Check,
   Radio,
-  Sliders,
-  Activity,
-  AlertCircle,
-  X
+  AlertCircle
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -72,18 +62,13 @@ export function CallStudioPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [remoteConnected, setRemoteConnected] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [metronomeOpen, setMetronomeOpen] = useState(false);
-  const [roomMetronome, setRoomMetronome] = useState(null);
   const [hasLocalVideo, setHasLocalVideo] = useState(true);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
   const [errorModalMsg, setErrorModalMsg] = useState(null);
 
-  // Available Hardware Devices
+  // Available camera devices for in-call switching
   const [cameras, setCameras] = useState([]);
-  const [mics, setMics] = useState([]);
   const [selectedCam, setSelectedCam] = useState('');
-  const [selectedMic, setSelectedMic] = useState('');
 
   // 1. Initial setup and lifecycle
   useEffect(() => {
@@ -97,8 +82,6 @@ export function CallStudioPage() {
     const discardCallSession = async (message, shouldDelete = false) => {
       if (isTerminated) return;
       isTerminated = true;
-
-      stopMetronome();
 
       if (roomUnsubscribe) {
         roomUnsubscribe();
@@ -130,7 +113,6 @@ export function CallStudioPage() {
       stopLocalMedia(localVideoRef.current);
       releaseScreenWakeLock();
 
-      // If terminated due to room not found or host unavailable, show user-friendly modal
       if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended"))) {
         setErrorModalMsg(message);
       } else {
@@ -160,18 +142,21 @@ export function CallStudioPage() {
         setHasLocalVideo(videoTracks.length > 0);
         setHasLocalAudio(audioTracks.length > 0);
 
-        // Populate device lists
+        // Populate camera list for in-call camera switching
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
-          setCameras(devices.filter(d => d.kind === 'videoinput'));
-          setMics(devices.filter(d => d.kind === 'audioinput'));
+          const videoDevices = devices.filter(d => d.kind === 'videoinput');
+          setCameras(videoDevices);
+          if (videoDevices.length > 0) {
+            setSelectedCam(videoDevices[0].deviceId);
+          }
         }
 
         await requestScreenWakeLock(wakeLockBadgeRef.current);
 
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
 
-        // WebRTC initialization with DataChannel sync
+        // WebRTC initialization
         initPeerConnection({
           localStream: stream,
           isCaller,
@@ -191,11 +176,6 @@ export function CallStudioPage() {
           onConnectionStateChange: (state) => {
             if (state === 'failed') {
               discardCallSession("Connection lost.", true);
-            }
-          },
-          onSyncMessageCallback: (msg) => {
-            if (msg.type === 'METRONOME_SYNC' && msg.metronome) {
-              setRoomMetronome({ ...msg.metronome, isLocal: false });
             }
           }
         });
@@ -233,10 +213,6 @@ export function CallStudioPage() {
             const data = snapshot.data();
             if (!data) return;
 
-            if (data.metronome) {
-              setRoomMetronome(data.metronome);
-            }
-
             if (data.answer && pc && pc.signalingState === 'have-local-offer') {
               const answerDesc = new RTCSessionDescription(data.answer);
               pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
@@ -265,10 +241,6 @@ export function CallStudioPage() {
 
             const data = snapshot.data();
             if (!data) return;
-
-            if (data.metronome) {
-              setRoomMetronome(data.metronome);
-            }
 
             // When host's offer is populated and callee hasn't answered yet
             if (data.offer && !answered && pc) {
@@ -334,7 +306,6 @@ export function CallStudioPage() {
 
   // Leave Call action
   const handleLeaveCall = async () => {
-    stopMetronome();
     try {
       if (roomId) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
@@ -353,26 +324,45 @@ export function CallStudioPage() {
     navigate(currentUser ? '/dashboard' : '/');
   };
 
-  // Toggle Controls
+  // Toggle Microphone
   const handleAudioToggle = () => {
     const muted = toggleAudioMute();
     setIsMuted(muted);
   };
 
+  // Toggle Video
   const handleVideoToggle = () => {
     const stopped = toggleVideoFeed();
     setIsVideoOff(stopped);
   };
 
+  // Switch camera: cycles through connected cameras if multiple exist, or toggles facing mode on mobile
   const handleFlipCamera = async () => {
-    toggleCameraFacingMode();
-    setSelectedCam('');
-    await handleDeviceSwitch({
-      selectedCamId: '',
-      selectedMicId: selectedMic,
-      localVideo: localVideoRef.current,
-      pc
-    });
+    if (!hasLocalVideo) return;
+
+    if (cameras.length > 1) {
+      const currentIndex = cameras.findIndex(c => c.deviceId === selectedCam);
+      const nextIndex = (currentIndex + 1) % cameras.length;
+      const nextCamId = cameras[nextIndex].deviceId;
+      setSelectedCam(nextCamId);
+
+      await handleDeviceSwitch({
+        selectedCamId: nextCamId,
+        localVideo: localVideoRef.current,
+        pc
+      });
+    } else {
+      toggleCameraFacingMode();
+      await handleDeviceSwitch({
+        selectedCamId: '',
+        localVideo: localVideoRef.current,
+        pc
+      });
+    }
+
+    if (localStream) {
+      setHasLocalVideo(localStream.getVideoTracks().length > 0);
+    }
   };
 
   // Copy Room ID
@@ -381,30 +371,6 @@ export function CallStudioPage() {
       setCopiedRoomId(true);
       setTimeout(() => setCopiedRoomId(false), 2000);
     });
-  };
-
-  // Synchronized Metronome callback (DataChannel direct P2P + Firestore database entry)
-  const handleSyncMetronome = async (newMetronomeData) => {
-    setRoomMetronome({ ...newMetronomeData, isLocal: true });
-
-    // 1. Instantaneous direct P2P sync via WebRTC DataChannel (sub-millisecond fast)
-    sendSyncMessage({
-      type: 'METRONOME_SYNC',
-      metronome: { ...newMetronomeData, isLocal: false }
-    });
-
-    // 2. Persistent database entry in Firestore so both devices are coordinated
-    try {
-      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-      await updateDoc(roomRef, {
-        metronome: {
-          ...newMetronomeData,
-          isLocal: false
-        }
-      });
-    } catch (e) {
-      console.warn("Could not sync metronome state to Firestore:", e);
-    }
   };
 
   return (
@@ -442,12 +408,6 @@ export function CallStudioPage() {
             <div ref={wakeLockBadgeRef} className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-blue-400 flex items-center gap-1.5 border border-blue-500/30 shadow">
               Awake
             </div>
-            {roomMetronome?.active && (
-              <div className="bg-purple-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/40 shadow animate-pulse">
-                <Activity className="w-3.5 h-3.5 text-purple-300" />
-                {roomMetronome.bpm || 120} BPM
-              </div>
-            )}
           </div>
 
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
@@ -529,7 +489,7 @@ export function CallStudioPage() {
           </div>
         </div>
 
-        {/* Bottom: Media & Studio Controls */}
+        {/* Bottom: In-Call Studio Controls */}
         <div className="w-full flex flex-col gap-2 shrink-0">
           <div className="sidebar-header text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
             Studio Controls
@@ -550,7 +510,7 @@ export function CallStudioPage() {
               title={!hasLocalAudio ? "No microphone attached" : isMuted ? "Unmute Mic" : "Mute Mic"}
             >
               {isMuted || !hasLocalAudio ? <MicOff className="w-5 h-5 shrink-0" /> : <Mic className="w-5 h-5 shrink-0" />}
-              <span className="text-xs font-semibold">{!hasLocalAudio ? "No Mic" : "Mic"}</span>
+              <span className="text-xs font-semibold">{!hasLocalAudio ? "No Mic" : isMuted ? "Unmute" : "Mute"}</span>
             </button>
 
             {/* Video Toggle */}
@@ -567,54 +527,29 @@ export function CallStudioPage() {
               title={!hasLocalVideo ? "No camera attached" : isVideoOff ? "Start Video" : "Stop Video"}
             >
               {isVideoOff || !hasLocalVideo ? <VideoOff className="w-5 h-5 shrink-0" /> : <Video className="w-5 h-5 shrink-0" />}
-              <span className="text-xs font-semibold">{!hasLocalVideo ? "No Cam" : "Camera"}</span>
+              <span className="text-xs font-semibold">{!hasLocalVideo ? "No Cam" : isVideoOff ? "Start Video" : "Stop Video"}</span>
             </button>
 
-            {/* Mobile Camera Switch (Front/Back) */}
+            {/* In-Call Camera Switch (Front/Back on Mobile, or cycle attached cameras on Desktop) */}
             <button
               id="switchCameraBtn"
               onClick={handleFlipCamera}
               disabled={!hasLocalVideo}
-              className={`text-white shadow border transition-colors flex items-center justify-center ${
+              className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
                 !hasLocalVideo
                   ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-40'
                   : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
               }`}
-              title={!hasLocalVideo ? "Camera not available" : "Switch Front/Back Camera"}
+              title={!hasLocalVideo ? "Camera not available" : "Switch / Flip Camera"}
             >
               <RefreshCw className="w-5 h-5 shrink-0" />
+              <span className="text-xs font-semibold">Switch Cam</span>
             </button>
 
-            {/* Synchronized Metronome Trigger */}
-            <button
-              onClick={() => setMetronomeOpen(true)}
-              className={`text-white shadow border transition-all flex items-center justify-center gap-2 ${
-                roomMetronome?.active
-                  ? 'bg-purple-600 hover:bg-purple-500 border-purple-400 shadow-purple-900/50 ring-2 ring-purple-400/30'
-                  : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-              }`}
-              title="Synchronized Studio Metronome"
-            >
-              <Activity className={`w-5 h-5 shrink-0 ${roomMetronome?.active ? 'animate-pulse text-white' : 'text-purple-400'}`} />
-              <span className="text-xs font-semibold">
-                {roomMetronome?.active ? `${roomMetronome.bpm || 120} BPM` : 'Metronome'}
-              </span>
-            </button>
-
-            {/* Hardware & Diagnostics Modal */}
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="bg-gray-800 hover:bg-gray-700 text-white shadow border border-gray-600 transition-colors flex items-center justify-center gap-2"
-              title="Camera, Mic & Device Diagnostics"
-            >
-              <Settings className="w-5 h-5 shrink-0 text-gray-300" />
-              <span className="text-xs font-semibold">Devices</span>
-            </button>
-
-            {/* Leave Call (Full width span on 2-column grid) */}
+            {/* Leave Call */}
             <button
               onClick={handleLeaveCall}
-              className="col-span-2 bg-red-600 hover:bg-red-500 text-white shadow border border-red-700 transition-colors flex items-center justify-center gap-2"
+              className="bg-red-600 hover:bg-red-500 text-white shadow border border-red-700 transition-colors flex items-center justify-center gap-2"
               title="Leave & End Call"
             >
               <PhoneOff className="w-5 h-5 shrink-0" />
@@ -624,22 +559,7 @@ export function CallStudioPage() {
         </div>
       </aside>
 
-      {/* 3. Synchronized Metronome Modal */}
-      <MetronomeModal
-        isOpen={metronomeOpen}
-        onClose={() => setMetronomeOpen(false)}
-        metronomeData={roomMetronome}
-        onSyncMetronome={handleSyncMetronome}
-        currentUserId={currentUser?.uid}
-      />
-
-      {/* 4. Hardware Devices & Diagnostics Modal */}
-      <DeviceSetupModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
-
-      {/* 5. Graceful Session Error Modal */}
+      {/* Graceful Session Error Modal */}
       {errorModalMsg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn select-none">
           <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">

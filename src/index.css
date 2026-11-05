@@ -195,14 +195,6 @@ body.layout-overlay #mediaControls button {
   padding: 0.625rem !important;
 }
 
-body.device-desktop #switchCameraBtn {
-  display: none !important;
-}
-
-body.device-mobile #switchCameraBtn {
-  display: flex !important;
-}
-
 /* 2. Sidepanel Layout (Wide Desktop PC / Laptop) */
 body.layout-sidepanel #videoContainer {
   flex-direction: row !important;

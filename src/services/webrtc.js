@@ -102,7 +102,7 @@ function handleDataChannelMessage(msg) {
     return;
   }
 
-  // Forward application sync messages (e.g. metronome events)
+  // Forward application sync messages
   if (syncMessageCallback) {
     syncMessageCallback(msg);
   }
