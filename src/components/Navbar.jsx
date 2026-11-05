@@ -1,12 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Shield, GraduationCap, Music, Sliders } from 'lucide-react';
+import { LogOut, User, Shield, GraduationCap, Music, Settings2 } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 
-export function Navbar({ onOpenProfile, onOpenAudioSettings }) {
+export function Navbar({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }) {
   const { currentUser, userProfile, isAdmin, loginWithGoogle, logout } = useAuth();
   const location = useLocation();
+  const handleOpenSettings = onOpenDeviceSetup || onOpenAudioSettings;
 
   const getRoleBadge = (role) => {
     switch (role) {
@@ -89,14 +90,14 @@ export function Navbar({ onOpenProfile, onOpenAudioSettings }) {
             </Link>
           )}
 
-          {/* Audio Settings Trigger */}
+          {/* Hardware Device Setup Trigger */}
           <button
-            onClick={onOpenAudioSettings}
-            title="Audio & DSP Settings"
+            onClick={handleOpenSettings}
+            title="Audio & Video Device Diagnostics"
             className="px-2.5 py-1.5 rounded-lg text-gray-300 hover:text-purple-300 hover:bg-gray-800 transition-colors flex items-center gap-1.5 text-xs sm:text-sm"
           >
-            <Sliders className="w-3.5 h-3.5 text-purple-400" />
-            <span className="hidden sm:inline">Audio Settings</span>
+            <Settings2 className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden sm:inline">Device Setup</span>
           </button>
         </div>
       </div>

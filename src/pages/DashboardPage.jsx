@@ -29,9 +29,10 @@ import {
 } from 'lucide-react';
 import { UserAvatar } from '../components/UserAvatar';
 
-export function DashboardPage({ onOpenProfile, onOpenAudioSettings }) {
+export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }) {
   const { currentUser, userProfile, isAdmin, loginWithGoogle } = useAuth();
   const { initiateDirectCall, callNotice, setCallNotice } = useCall();
+  const handleOpenSettings = onOpenDeviceSetup || onOpenAudioSettings;
 
   const [allUsers, setAllUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -186,7 +187,7 @@ export function DashboardPage({ onOpenProfile, onOpenAudioSettings }) {
 
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* <button
-            onClick={onOpenAudioSettings}
+            onClick={handleOpenSettings}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/60 text-purple-200 text-xs font-semibold border border-purple-600/40 transition-colors shadow-sm"
             title="Configure Acoustic Pre-processing"
           >

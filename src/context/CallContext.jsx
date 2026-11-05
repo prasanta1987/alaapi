@@ -112,6 +112,25 @@ export function CallProvider({ children }) {
 
     await setDoc(callDocRef, callPayload);
 
+    // Pre-create room document so callee can immediately connect upon accepting
+    try {
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+      await setDoc(roomRef, {
+        offer: null,
+        answer: null,
+        callerCandidates: [],
+        calleeCandidates: [],
+        createdAt: new Date().toISOString(),
+        status: 'ringing',
+        host: {
+          uid: currentUser.uid,
+          displayName: userProfile?.displayName || currentUser.displayName || 'Teacher'
+        }
+      });
+    } catch (e) {
+      console.warn("Could not pre-initialize room document:", e);
+    }
+
     // Host navigates straight to Call Studio as Caller, establishing room and offer
     navigate(`/room/${roomId}?isCaller=true&callId=${callDocRef.id}&calleeName=${encodeURIComponent(student.displayName || 'Student')}`);
   };

@@ -9,6 +9,36 @@ export let isVideoStopped = false;
 export let wakeLock = null;
 
 const STORAGE_KEY_AUDIO_DSP = 'vocal_studio_audio_dsp_settings';
+const STORAGE_KEY_PREFERRED_DEVICES = 'alaapi_preferred_devices';
+
+export function getPreferredDevices() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PREFERRED_DEVICES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        cameraId: parsed.cameraId || '',
+        micId: parsed.micId || '',
+        speakerId: parsed.speakerId || ''
+      };
+    }
+  } catch (e) {
+    console.warn("Could not read preferred devices:", e);
+  }
+  return { cameraId: '', micId: '', speakerId: '' };
+}
+
+export function savePreferredDevices(devices) {
+  try {
+    const current = getPreferredDevices();
+    const updated = { ...current, ...devices };
+    localStorage.setItem(STORAGE_KEY_PREFERRED_DEVICES, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    console.warn("Could not save preferred devices:", e);
+  }
+  return devices;
+}
 
 // Default DSP Settings for Music & Vocal Classes:
 // Echo Cancellation OFF (stereo 48kHz lossless when using headphones)
@@ -75,8 +105,10 @@ export function buildAudioConstraints(deviceId = null) {
     constraints.sampleRate = { ideal: 48000 };
   }
 
-  if (deviceId) {
-    constraints.deviceId = { ideal: deviceId };
+  const preferred = getPreferredDevices();
+  const targetMicId = deviceId || preferred.micId;
+  if (targetMicId) {
+    constraints.deviceId = { ideal: targetMicId };
   }
 
   return constraints;
@@ -152,12 +184,14 @@ export function updateLocalVideoAspectRatio(videoEl = null) {
   }
 }
 
-export function getMusicConstraints(facingMode = currentFacingMode) {
+export function getMusicConstraints(facingMode = currentFacingMode, preferredCamId = null) {
   const isMobile = isMobileDevice();
+  const preferred = getPreferredDevices();
+  const targetCamId = preferredCamId || preferred.cameraId;
 
-  const videoConstraints = {
-    facingMode: { ideal: facingMode }
-  };
+  const videoConstraints = targetCamId
+    ? { deviceId: { ideal: targetCamId } }
+    : { facingMode: { ideal: facingMode } };
 
   if (!isMobile) {
     videoConstraints.width = { ideal: 1280 };

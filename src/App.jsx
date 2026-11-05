@@ -10,11 +10,11 @@ import { CallStudioPage } from './pages/CallStudioPage';
 import { IncomingCallModal } from './components/IncomingCallModal';
 import { OutgoingCallModal } from './components/OutgoingCallModal';
 import { ProfileModal } from './components/ProfileModal';
-import { AudioSettingsModal } from './components/AudioSettingsModal';
+import { DeviceSetupModal } from './components/DeviceSetupModal';
 
 export function AppContent() {
   const [profileOpen, setProfileOpen] = useState(false);
-  const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+  const [deviceSetupOpen, setDeviceSetupOpen] = useState(false);
   const location = useLocation();
 
   // Hide the Navbar when inside an active WebRTC call room
@@ -25,7 +25,8 @@ export function AppContent() {
       {!isInCall && (
         <Navbar
           onOpenProfile={() => setProfileOpen(true)}
-          onOpenAudioSettings={() => setAudioSettingsOpen(true)}
+          onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
+          onOpenAudioSettings={() => setDeviceSetupOpen(true)}
         />
       )}
 
@@ -40,14 +41,20 @@ export function AppContent() {
           <Routes>
             <Route
               path="/"
-              element={<LobbyPage onOpenAudioSettings={() => setAudioSettingsOpen(true)} />}
+              element={
+                <LobbyPage
+                  onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
+                  onOpenAudioSettings={() => setDeviceSetupOpen(true)}
+                />
+              }
             />
             <Route
               path="/dashboard"
               element={
                 <DashboardPage
                   onOpenProfile={() => setProfileOpen(true)}
-                  onOpenAudioSettings={() => setAudioSettingsOpen(true)}
+                  onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
+                  onOpenAudioSettings={() => setDeviceSetupOpen(true)}
                 />
               }
             />
@@ -55,7 +62,12 @@ export function AppContent() {
             <Route path="/editroles" element={<EditRolePage />} />
             <Route
               path="*"
-              element={<LobbyPage onOpenAudioSettings={() => setAudioSettingsOpen(true)} />}
+              element={
+                <LobbyPage
+                  onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
+                  onOpenAudioSettings={() => setDeviceSetupOpen(true)}
+                />
+              }
             />
           </Routes>
         </main>
@@ -65,7 +77,7 @@ export function AppContent() {
       <IncomingCallModal />
       <OutgoingCallModal />
       <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-      <AudioSettingsModal isOpen={audioSettingsOpen} onClose={() => setAudioSettingsOpen(false)} />
+      <DeviceSetupModal isOpen={deviceSetupOpen} onClose={() => setDeviceSetupOpen(false)} />
     </div>
   );
 }

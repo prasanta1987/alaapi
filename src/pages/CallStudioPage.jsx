@@ -32,6 +32,11 @@ import {
   pc
 } from '../services/webrtc';
 import {
+  stopMetronome
+} from '../services/metronome';
+import { MetronomeModal } from '../components/MetronomeModal';
+import { DeviceSetupModal } from '../components/DeviceSetupModal';
+import {
   Mic,
   MicOff,
   Video,
@@ -43,6 +48,8 @@ import {
   Check,
   Radio,
   Sliders,
+  Activity,
+  AlertCircle,
   X
 } from 'lucide-react';
 
@@ -65,8 +72,11 @@ export function CallStudioPage() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [metronomeOpen, setMetronomeOpen] = useState(false);
+  const [roomMetronome, setRoomMetronome] = useState(null);
   const [hasLocalVideo, setHasLocalVideo] = useState(true);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
+  const [errorModalMsg, setErrorModalMsg] = useState(null);
 
   // Available Hardware Devices
   const [cameras, setCameras] = useState([]);
@@ -86,6 +96,8 @@ export function CallStudioPage() {
     const discardCallSession = async (message, shouldDelete = false) => {
       if (isTerminated) return;
       isTerminated = true;
+
+      stopMetronome();
 
       if (roomUnsubscribe) {
         roomUnsubscribe();
@@ -116,7 +128,13 @@ export function CallStudioPage() {
       closePeerConnection();
       stopLocalMedia(localVideoRef.current);
       releaseScreenWakeLock();
-      navigate(currentUser ? '/dashboard' : '/');
+
+      // If terminated due to room not found or host unavailable, show user-friendly modal
+      if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended"))) {
+        setErrorModalMsg(message);
+      } else {
+        navigate(currentUser ? '/dashboard' : '/');
+      }
     };
 
     // If caller initiated via direct call, listen for decline from student
@@ -188,11 +206,12 @@ export function CallStudioPage() {
             callerCandidates: [],
             calleeCandidates: [],
             createdAt: new Date().toISOString(),
+            status: 'active',
             host: currentUser ? {
               uid: currentUser.uid,
               displayName: currentUser.displayName
             } : null
-          });
+          }, { merge: true });
 
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -206,6 +225,10 @@ export function CallStudioPage() {
 
             const data = snapshot.data();
             if (!data) return;
+
+            if (data.metronome) {
+              setRoomMetronome(data.metronome);
+            }
 
             if (data.answer && pc && pc.signalingState === 'have-local-offer') {
               const answerDesc = new RTCSessionDescription(data.answer);
@@ -221,7 +244,7 @@ export function CallStudioPage() {
           let answered = false;
           const notFoundTimer = setTimeout(() => {
             if (!answered && !isTerminated) {
-              discardCallSession("Room not found or host unavailable.", false);
+              discardCallSession(`Room "${roomId}" not found or host unavailable.`, false);
             }
           }, 15000);
 
@@ -235,6 +258,10 @@ export function CallStudioPage() {
 
             const data = snapshot.data();
             if (!data) return;
+
+            if (data.metronome) {
+              setRoomMetronome(data.metronome);
+            }
 
             // When host's offer is populated and callee hasn't answered yet
             if (data.offer && !answered && pc) {
@@ -300,6 +327,7 @@ export function CallStudioPage() {
 
   // Leave Call action
   const handleLeaveCall = async () => {
+    stopMetronome();
     try {
       if (roomId) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
@@ -348,30 +376,14 @@ export function CallStudioPage() {
     });
   };
 
-  // Hardware change
-  const handleCamChange = async (e) => {
-    const camId = e.target.value;
-    setSelectedCam(camId);
-    await handleDeviceSwitch({
-      selectedCamId: camId,
-      localVideo: localVideoRef.current,
-      pc
-    });
-    if (localStream) {
-      setHasLocalVideo(localStream.getVideoTracks().length > 0);
-    }
-  };
-
-  const handleMicChange = async (e) => {
-    const micId = e.target.value;
-    setSelectedMic(micId);
-    await handleDeviceSwitch({
-      selectedMicId: micId,
-      localVideo: localVideoRef.current,
-      pc
-    });
-    if (localStream) {
-      setHasLocalAudio(localStream.getAudioTracks().length > 0);
+  // Synchronized Metronome callback
+  const handleSyncMetronome = async (newMetronomeData) => {
+    setRoomMetronome(newMetronomeData);
+    try {
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+      await updateDoc(roomRef, { metronome: newMetronomeData });
+    } catch (e) {
+      console.warn("Could not sync metronome state to Firestore:", e);
     }
   };
 
@@ -410,6 +422,12 @@ export function CallStudioPage() {
             <div ref={wakeLockBadgeRef} className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-blue-400 flex items-center gap-1.5 border border-blue-500/30 shadow">
               Awake
             </div>
+            {roomMetronome?.active && (
+              <div className="bg-purple-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/40 shadow animate-pulse">
+                <Activity className="w-3.5 h-3.5 text-purple-300" />
+                {roomMetronome.bpm || 120} BPM
+              </div>
+            )}
           </div>
 
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
@@ -470,7 +488,7 @@ export function CallStudioPage() {
           </div>
         </div>
 
-        {/* Middle: Session Info (Desktop only card) */}
+        {/* Middle: Session Info (Clean Desktop Card with NO DSP switches) */}
         <div className="sidebar-info-card flex-col gap-2.5 p-3.5 bg-gray-950/70 rounded-xl border border-gray-800 text-xs">
           {/* Room ID Row */}
           <div className="flex items-center justify-between bg-gray-900/90 px-3 py-2 rounded-lg border border-purple-500/30">
@@ -491,10 +509,10 @@ export function CallStudioPage() {
           </div>
         </div>
 
-        {/* Bottom: Media Controls */}
+        {/* Bottom: Media & Studio Controls */}
         <div className="w-full flex flex-col gap-2 shrink-0">
           <div className="sidebar-header text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
-            Call Controls
+            Studio Controls
           </div>
 
           <nav id="mediaControls" className="pointer-events-auto shrink-0">
@@ -547,20 +565,36 @@ export function CallStudioPage() {
               <RefreshCw className="w-5 h-5 shrink-0" />
             </button>
 
-            {/* Hardware / DSP Settings */}
+            {/* Synchronized Metronome Trigger */}
+            <button
+              onClick={() => setMetronomeOpen(true)}
+              className={`text-white shadow border transition-all flex items-center justify-center gap-2 ${
+                roomMetronome?.active
+                  ? 'bg-purple-600 hover:bg-purple-500 border-purple-400 shadow-purple-900/50 ring-2 ring-purple-400/30'
+                  : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+              }`}
+              title="Synchronized Studio Metronome"
+            >
+              <Activity className={`w-5 h-5 shrink-0 ${roomMetronome?.active ? 'animate-pulse text-white' : 'text-purple-400'}`} />
+              <span className="text-xs font-semibold">
+                {roomMetronome?.active ? `${roomMetronome.bpm || 120} BPM` : 'Metronome'}
+              </span>
+            </button>
+
+            {/* Hardware & Diagnostics Modal */}
             <button
               onClick={() => setSettingsOpen(true)}
               className="bg-gray-800 hover:bg-gray-700 text-white shadow border border-gray-600 transition-colors flex items-center justify-center gap-2"
-              title="Hardware & Audio Settings"
+              title="Camera, Mic & Device Diagnostics"
             >
-              <Settings className="w-5 h-5 shrink-0" />
+              <Settings className="w-5 h-5 shrink-0 text-gray-300" />
               <span className="text-xs font-semibold">Devices</span>
             </button>
 
-            {/* Leave Call */}
+            {/* Leave Call (Full width span on 2-column grid) */}
             <button
               onClick={handleLeaveCall}
-              className="bg-red-600 hover:bg-red-500 text-white shadow border border-red-700 transition-colors flex items-center justify-center gap-2"
+              className="col-span-2 bg-red-600 hover:bg-red-500 text-white shadow border border-red-700 transition-colors flex items-center justify-center gap-2"
               title="Leave & End Call"
             >
               <PhoneOff className="w-5 h-5 shrink-0" />
@@ -570,53 +604,35 @@ export function CallStudioPage() {
         </div>
       </aside>
 
-      {/* 3. Hardware Devices Settings Modal */}
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-gray-900 p-5 sm:p-6 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full relative">
-            <button
-              onClick={() => setSettingsOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      {/* 3. Synchronized Metronome Modal */}
+      <MetronomeModal
+        isOpen={metronomeOpen}
+        onClose={() => setMetronomeOpen(false)}
+        metronomeData={roomMetronome}
+        onSyncMetronome={handleSyncMetronome}
+      />
 
-            <h3 className="text-base sm:text-lg font-semibold text-gray-200 mb-4 flex items-center gap-2">
-              <Settings className="w-5 h-5 text-purple-400" />
-              Hardware Devices
-            </h3>
+      {/* 4. Hardware Devices & Diagnostics Modal */}
+      <DeviceSetupModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
 
-            <div className="space-y-4 text-xs sm:text-sm">
-              {/* Camera Select */}
-              <div>
-                <label className="block text-gray-400 mb-1">Camera Device</label>
-                <select
-                  value={selectedCam}
-                  onChange={handleCamChange}
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-500"
-                >
-                  <option value="">Default Camera</option>
-                  {cameras.map(c => (
-                    <option key={c.deviceId} value={c.deviceId}>{c.label || `Camera (${c.deviceId.substring(0, 5)}...)`}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Mic Select */}
-              <div>
-                <label className="block text-gray-400 mb-1">Microphone Device</label>
-                <select
-                  value={selectedMic}
-                  onChange={handleMicChange}
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-500"
-                >
-                  <option value="">Default Microphone</option>
-                  {mics.map(m => (
-                    <option key={m.deviceId} value={m.deviceId}>{m.label || `Mic (${m.deviceId.substring(0, 5)}...)`}</option>
-                  ))}
-                </select>
-              </div>
+      {/* 5. Graceful Session Error Modal */}
+      {errorModalMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn select-none">
+          <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center mx-auto mb-3 text-red-400">
+              <AlertCircle className="w-6 h-6" />
             </div>
+            <h3 className="text-base font-bold text-white mb-2">Class Session Notice</h3>
+            <p className="text-xs text-gray-300 mb-5 leading-relaxed">{errorModalMsg}</p>
+            <button
+              onClick={() => navigate(currentUser ? '/dashboard' : '/')}
+              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+            >
+              Return to {currentUser ? 'Dashboard' : 'Lobby'}
+            </button>
           </div>
         </div>
       )}
