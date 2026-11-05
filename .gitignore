@@ -53,6 +53,7 @@ dist-ssr/
 
 # Backup directories
 backup_vanilla_v1/
+public/
 
 # Local env files
 .env*.local
