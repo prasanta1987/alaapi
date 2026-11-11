@@ -8,6 +8,7 @@ import {
   collection,
   doc,
   updateDoc,
+  deleteDoc,
   onSnapshot
 } from '../services/firebase';
 import {
@@ -25,7 +26,9 @@ import {
   UserCheck,
   RefreshCw,
   Info,
-  Phone
+  Phone,
+  Video,
+  Trash2
 } from 'lucide-react';
 import { UserAvatar } from '../components/UserAvatar';
 
@@ -67,6 +70,37 @@ export function EditRolePage() {
 
     return () => unsubscribe();
   }, [currentUser, isAdmin]);
+
+
+  // Admin delete user (Cannot delete other Admins or Self)
+  const handleDeleteUser = async (targetUser) => {
+    if (!isAdmin) return;
+    if (targetUser.role === 'admin' || targetUser.id === currentUser.uid) {
+      alert("Admin accounts cannot be deleted.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete "${targetUser.displayName || targetUser.email || 'this user'}" (${targetUser.role || 'student'})?\n\nThis will remove their account profile from the platform.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUser.id);
+      await deleteDoc(userRef);
+      setFeedback({
+        type: 'success',
+        msg: `User "${targetUser.displayName || targetUser.email}" was deleted successfully.`
+      });
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+      setFeedback({
+        type: 'error',
+        msg: `Failed to delete user: ${err.message}`
+      });
+    }
+  };
 
   // Update user role
   const handleRoleChange = async (targetUser, newRole) => {
@@ -435,21 +469,28 @@ export function EditRolePage() {
                         )}
                       </td>
 
-                      {/* Assign Role Dropdown & Call Action */}
+                      {/* Assign Role Dropdown, Call Actions & Delete Action */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
-                          {!isSelf && (
-                            <button
-                              onClick={() => initiateDirectCall(user)}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${isUserOnline(user)
-                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
-                                : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700'
-                                }`}
-                              title={`Call ${user.displayName || 'User'}`}
-                            >
-                              <Phone className="w-3 h-3" />
-                              Call
-                            </button>
+                          {!isSelf && isUserOnline(user) && (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => initiateDirectCall(user, 'video')}
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all"
+                                title={`Video Call ${user.displayName || 'User'}`}
+                              >
+                                <Video className="w-3 h-3" />
+                                Video
+                              </button>
+                              <button
+                                onClick={() => initiateDirectCall(user, 'audio')}
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all"
+                                title={`Audio Call ${user.displayName || 'User'}`}
+                              >
+                                <Phone className="w-3 h-3" />
+                                Audio
+                              </button>
+                            </div>
                           )}
                           {updatingUid === user.id && (
                             <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
@@ -464,6 +505,16 @@ export function EditRolePage() {
                             <option value="teacher">Teacher</option>
                             <option value="admin">Admin</option>
                           </select>
+                          {/* Admin Delete Action (Non-admins only) */}
+                          {!isSelf && currentRole !== 'admin' && (
+                            <button
+                              onClick={() => handleDeleteUser(user)}
+                              title={`Delete ${user.displayName || 'User'}`}
+                              className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -523,24 +574,54 @@ export function EditRolePage() {
                     <span>Instrument: <strong className="text-gray-300">{user.instrument || 'Vocals'}</strong></span>
                   </div>
 
-                  {/* Mobile Role Switcher */}
-                  <div className="pt-2 border-t border-gray-800/80 flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-gray-400">Change Role:</span>
-                    <div className="flex items-center gap-2">
-                      {updatingUid === user.id && (
-                        <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
-                      )}
-                      <select
-                        value={currentRole}
-                        disabled={updatingUid === user.id}
-                        onChange={(e) => handleRoleChange(user, e.target.value)}
-                        className="bg-gray-950 border border-gray-700 hover:border-purple-500 text-gray-200 text-xs font-semibold rounded-xl px-3 py-1.5 outline-none"
-                      >
-                        <option value="student">Student</option>
-                        <option value="teacher">Teacher</option>
-                        <option value="admin">Admin</option>
-                      </select>
+                  {/* Mobile Role Switcher, Calling & Delete Actions */}
+                  <div className="pt-2 border-t border-gray-800/80 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-gray-400">Change Role:</span>
+                      <div className="flex items-center gap-2">
+                        {updatingUid === user.id && (
+                          <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                        )}
+                        <select
+                          value={currentRole}
+                          disabled={updatingUid === user.id}
+                          onChange={(e) => handleRoleChange(user, e.target.value)}
+                          className="bg-gray-950 border border-gray-700 hover:border-purple-500 text-gray-200 text-xs font-semibold rounded-xl px-3 py-1.5 outline-none"
+                        >
+                          <option value="student">Student</option>
+                          <option value="teacher">Teacher</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                        {!isSelf && currentRole !== 'admin' && (
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            title={`Delete ${user.displayName || 'User'}`}
+                            className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {!isSelf && isUserOnline(user) && (
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          onClick={() => initiateDirectCall(user, 'video')}
+                          className="py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          Video Call
+                        </button>
+                        <button
+                          onClick={() => initiateDirectCall(user, 'audio')}
+                          className="py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          Audio Call
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

@@ -18,6 +18,7 @@ import {
   stopLocalMedia,
   toggleAudioMute,
   toggleVideoFeed,
+  setVideoFeedEnabled,
   toggleCameraFacingMode,
   setCameraFacingMode,
   currentFacingMode,
@@ -45,7 +46,8 @@ import {
   Check,
   Radio,
   AlertCircle,
-  Clock
+  Clock,
+  FlipHorizontal
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -54,6 +56,7 @@ export function CallStudioPage() {
   const isCaller = searchParams.get('isCaller') === 'true';
   const callId = searchParams.get('callId');
   const calleeName = searchParams.get('calleeName');
+  const callType = searchParams.get('callType') || 'video'; // 'video' | 'audio'
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
@@ -65,6 +68,7 @@ export function CallStudioPage() {
   const [copiedRoomId, setCopiedRoomId] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isLocalMirrored, setIsLocalMirrored] = useState(true);
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [hasLocalVideo, setHasLocalVideo] = useState(true);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
@@ -168,6 +172,12 @@ export function CallStudioPage() {
         const audioTracks = stream ? stream.getAudioTracks() : [];
         setHasLocalVideo(videoTracks.length > 0);
         setHasLocalAudio(audioTracks.length > 0);
+
+        // If audio-only call, start with video disabled (user can still toggle on anytime)
+        if (callType === 'audio') {
+          setIsVideoOff(true);
+          setVideoFeedEnabled(false);
+        }
 
         // Populate camera list for in-call camera switching
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
@@ -447,6 +457,30 @@ export function CallStudioPage() {
     });
   };
 
+  // Share Room Link via WhatsApp
+  const shareViaWhatsApp = () => {
+    const meetingUrl = `${window.location.origin}/room/${roomId}`;
+    const message = `Join my Alaapi music class session:\n${meetingUrl}`;
+    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  // Toggle local video mirror
+  const handleToggleLocalMirror = (e) => {
+    if (e) e.stopPropagation();
+    setIsLocalMirrored(prev => {
+      const next = !prev;
+      if (localVideoRef.current) {
+        if (next) {
+          localVideoRef.current.classList.add('scale-x-[-1]');
+        } else {
+          localVideoRef.current.classList.remove('scale-x-[-1]');
+        }
+      }
+      return next;
+    });
+  };
+
   return (
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
       {/* 1. Main Remote Stage */}
@@ -476,7 +510,7 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Mobile Top Overlay: Room ID, Call Timer & Status Pill */}
+        {/* Mobile Top Overlay: Room ID, Call Timer & WhatsApp Share Button */}
         <div className="mobile-top-bar absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
           <div className="flex items-center gap-1.5 pointer-events-auto">
             {/* Small Call Running Timer Pill on Mobile */}
@@ -499,8 +533,15 @@ export function CallStudioPage() {
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
             <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
             <span className="text-sm font-mono font-bold text-purple-400 tracking-wider">{roomId}</span>
-            <button onClick={copyRoomId} className="text-gray-400 hover:text-white p-0.5">
-              {copiedRoomId ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {/* Share via WhatsApp button (replaces copy icon on mobile) */}
+            <button
+              onClick={shareViaWhatsApp}
+              className="text-emerald-400 hover:text-emerald-300 p-0.5 transition-colors flex items-center justify-center"
+              title="Share Room link via WhatsApp"
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.054-1.077-.087-1.189-.379-2.126-1.282-2.735-2.029-.071-.088-.135-.17-.193-.243-.377-.478-.65-.824-.65-1.42 0-.629.33-.938.448-1.06.118-.122.257-.153.342-.153.085 0 .17.002.245.006.079.004.184-.03.287.218.106.255.362.883.394.948.032.065.053.141.01.226-.042.085-.064.138-.127.212-.064.074-.134.166-.191.223-.064.064-.131.134-.056.262.074.128.33.543.708.88.487.433.897.568 1.025.632.128.064.202.053.277-.032.074-.085.319-.372.404-.5.085-.128.17-.106.287-.064.117.042.744.351.872.415.128.064.213.096.245.149.032.053.032.308-.112.713zM12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.975-1.306A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18.167c-1.636 0-3.15-.494-4.417-1.341l-.317-.212-2.955.775.789-2.88-.231-.368A8.136 8.136 0 013.833 12c0-4.503 3.664-8.167 8.167-8.167 4.503 0 8.167 3.664 8.167 8.167 0 4.503-3.664 8.167-8.167 8.167z"/>
+              </svg>
             </button>
           </div>
         </div>
@@ -533,11 +574,26 @@ export function CallStudioPage() {
             <video
               ref={localVideoRef}
               id="localVideo"
-              className={`w-full h-full object-cover transform scale-x-[-1] ${hasLocalVideo ? '' : 'hidden'}`}
+              className={`w-full h-full object-cover ${isLocalMirrored ? 'scale-x-[-1]' : ''} ${hasLocalVideo ? '' : 'hidden'}`}
               autoPlay
               playsInline
               muted
             />
+
+            {/* Mirror Toggle Button on Overlay Video Feed */}
+            {hasLocalVideo && (
+              <button
+                onClick={handleToggleLocalMirror}
+                title={isLocalMirrored ? "Switch to Normal (Unmirrored)" : "Switch to Mirrored"}
+                className="absolute top-1.5 left-1.5 z-20 bg-black/70 hover:bg-black/90 active:scale-95 text-gray-200 hover:text-white px-1.5 py-1 rounded-md backdrop-blur border border-white/20 transition-all flex items-center gap-1 shadow-md"
+              >
+                <FlipHorizontal className="w-3.5 h-3.5 text-purple-300" />
+                <span className="text-[9px] font-semibold hidden sm:inline">
+                  {isLocalMirrored ? 'Mirrored' : 'Normal'}
+                </span>
+              </button>
+            )}
+
             {!hasLocalVideo && (
               <div className="flex flex-col items-center justify-center p-4 text-center text-gray-500 w-full">
                 <VideoOff className="w-7 h-7 mb-1.5 text-purple-400/60" />
@@ -562,9 +618,24 @@ export function CallStudioPage() {
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Room ID</span>
               <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
             </div>
-            <button onClick={copyRoomId} className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors">
-              {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={shareViaWhatsApp}
+                title="Share Meeting via WhatsApp"
+                className="text-emerald-400 hover:text-emerald-300 p-1 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
+              >
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.054-1.077-.087-1.189-.379-2.126-1.282-2.735-2.029-.071-.088-.135-.17-.193-.243-.377-.478-.65-.824-.65-1.42 0-.629.33-.938.448-1.06.118-.122.257-.153.342-.153.085 0 .17.002.245.006.079.004.184-.03.287.218.106.255.362.883.394.948.032.065.053.141.01.226-.042.085-.064.138-.127.212-.064.074-.134.166-.191.223-.064.064-.131.134-.056.262.074.128.33.543.708.88.487.433.897.568 1.025.632.128.064.202.053.277-.032.074-.085.319-.372.404-.5.085-.128.17-.106.287-.064.117.042.744.351.872.415.128.064.213.096.245.149.032.053.032.308-.112.713zM12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.975-1.306A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18.167c-1.636 0-3.15-.494-4.417-1.341l-.317-.212-2.955.775.789-2.88-.231-.368A8.136 8.136 0 013.833 12c0-4.503 3.664-8.167 8.167-8.167 4.503 0 8.167 3.664 8.167 8.167 0 4.503-3.664 8.167-8.167 8.167z"/>
+                </svg>
+              </button>
+              <button
+                onClick={copyRoomId}
+                title="Copy Room ID"
+                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+              >
+                {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {/* Call Running Timer & Connection Status */}

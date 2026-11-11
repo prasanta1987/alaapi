@@ -57,7 +57,7 @@ export function loadStoredAudioSettings() {
     console.warn("Could not read audio DSP settings from localStorage:", e);
   }
   return {
-    echoCancellation: true,
+    echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false
   };
@@ -336,6 +336,16 @@ export function toggleVideoFeed(button = null, iconOn = null, iconOff = null) {
   return isVideoStopped;
 }
 
+export function setVideoFeedEnabled(enabled) {
+  isVideoStopped = !enabled;
+  if (localStream) {
+    localStream.getVideoTracks().forEach(track => {
+      track.enabled = enabled;
+    });
+  }
+  return isVideoStopped;
+}
+
 export function toggleCameraFacingMode() {
   currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
   return currentFacingMode;
@@ -363,7 +373,7 @@ export async function handleDeviceSwitch({ selectedCamId, selectedMicId, facingM
     // Stop all old video tracks first so Android's camera HAL releases the hardware lock!
     const oldVideoTracks = localStream.getVideoTracks();
     oldVideoTracks.forEach(t => {
-      try { t.stop(); } catch (e) {}
+      try { t.stop(); } catch (e) { }
       localStream.removeTrack(t);
     });
 
@@ -419,7 +429,7 @@ export async function handleDeviceSwitch({ selectedCamId, selectedMicId, facingM
 
         if (pc && pc.signalingState !== 'closed') {
           const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video') ||
-                              pc.getSenders().find(s => s.dtlsTransport);
+            pc.getSenders().find(s => s.dtlsTransport);
           if (videoSender) {
             await videoSender.replaceTrack(newVideoTrack);
           } else {

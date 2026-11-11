@@ -65,6 +65,7 @@ export function CallProvider({ children }) {
     stopRingtone();
     const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', incomingCall.id);
     const targetRoomId = incomingCall.roomId;
+    const callType = incomingCall.callType || 'video';
 
     try {
       await updateDoc(callRef, { status: 'accepted' });
@@ -73,7 +74,7 @@ export function CallProvider({ children }) {
     }
 
     setIncomingCall(null);
-    navigate(`/room/${targetRoomId}`);
+    navigate(`/room/${targetRoomId}?callType=${callType}&calleeName=${encodeURIComponent(incomingCall.callerName || 'Teacher')}`);
   };
 
   // Decline incoming call
@@ -91,8 +92,8 @@ export function CallProvider({ children }) {
     setIncomingCall(null);
   };
 
-  // Initiate direct call from Teacher to Student
-  const initiateDirectCall = async (student) => {
+  // Initiate direct call from Teacher/Admin to Student/Teacher (video or audio)
+  const initiateDirectCall = async (student, callType = 'video') => {
     if (!currentUser) return;
 
     const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -106,6 +107,7 @@ export function CallProvider({ children }) {
       calleeId: student.id || student.uid,
       calleeName: student.displayName || 'Student',
       roomId,
+      callType, // 'video' | 'audio'
       status: 'ringing',
       createdAt: new Date().toISOString()
     };
@@ -122,6 +124,7 @@ export function CallProvider({ children }) {
         calleeCandidates: [],
         createdAt: new Date().toISOString(),
         status: 'ringing',
+        callType,
         host: {
           uid: currentUser.uid,
           displayName: userProfile?.displayName || currentUser.displayName || 'Teacher'
@@ -132,7 +135,7 @@ export function CallProvider({ children }) {
     }
 
     // Host navigates straight to Call Studio as Caller, establishing room and offer
-    navigate(`/room/${roomId}?isCaller=true&callId=${callDocRef.id}&calleeName=${encodeURIComponent(student.displayName || 'Student')}`);
+    navigate(`/room/${roomId}?isCaller=true&callId=${callDocRef.id}&callType=${callType}&calleeName=${encodeURIComponent(student.displayName || 'Student')}`);
   };
 
   // Cancel outgoing call

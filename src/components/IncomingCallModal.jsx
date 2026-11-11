@@ -1,12 +1,14 @@
 import React from 'react';
 import { useCall } from '../context/CallContext';
-import { Phone, PhoneOff, Music } from 'lucide-react';
+import { Phone, PhoneOff, Music, Video } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 
 export function IncomingCallModal() {
   const { incomingCall, acceptIncomingCall, declineIncomingCall } = useCall();
 
   if (!incomingCall) return null;
+
+  const isAudioCall = incomingCall.callType === 'audio';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
@@ -26,15 +28,24 @@ export function IncomingCallModal() {
         </div>
 
         {/* Caller Info */}
-        <div className="flex items-center justify-center gap-1.5 text-purple-400 text-xs font-semibold uppercase tracking-wider mb-1">
-          <Music className="w-3.5 h-3.5 animate-bounce" />
-          Incoming Vocal Class
+        <div className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider mb-1">
+          {isAudioCall ? (
+            <>
+              <Phone className="w-3.5 h-3.5 animate-bounce text-emerald-400" />
+              <span className="text-emerald-300">Incoming Audio Call</span>
+            </>
+          ) : (
+            <>
+              <Video className="w-3.5 h-3.5 animate-bounce text-purple-400" />
+              <span className="text-purple-300">Incoming Video Class</span>
+            </>
+          )}
         </div>
         <h3 className="text-xl sm:text-2xl font-extrabold text-white mb-1 truncate">
           {incomingCall.callerName || 'Your Teacher'}
         </h3>
         <p className="text-gray-400 text-xs mb-6">
-          is calling you for a 1-on-1 vocal session.
+          is calling you for a {isAudioCall ? '1-on-1 audio vocal lesson' : '1-on-1 video class session'}.
         </p>
 
         {/* Action Buttons */}

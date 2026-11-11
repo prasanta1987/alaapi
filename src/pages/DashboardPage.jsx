@@ -8,7 +8,8 @@ import {
   collection,
   onSnapshot,
   doc,
-  updateDoc
+  updateDoc,
+  deleteDoc
 } from '../services/firebase';
 import {
   Users,
@@ -17,6 +18,8 @@ import {
   Shield,
   ShieldCheck,
   Phone,
+  Video,
+  Trash2,
   Search,
   CheckCircle,
   AlertCircle,
@@ -76,6 +79,30 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
       setTimeout(() => setRoleUpdateMsg(''), 3000);
     } catch (err) {
       console.error("Failed to update role:", err);
+    }
+  };
+
+  // Handle deleting user (Admin only, cannot delete other admins)
+  const handleDeleteUser = async (targetUser) => {
+    if (!isAdmin) return;
+    if (targetUser.role === 'admin' || targetUser.id === currentUser.uid) {
+      alert("Admin accounts cannot be deleted.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete "${targetUser.displayName || targetUser.email || 'this user'}" (${targetUser.role || 'student'})?\n\nThis will remove their account profile from the platform.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUser.id);
+      await deleteDoc(userRef);
+      setRoleUpdateMsg(`User "${targetUser.displayName || targetUser.email}" was deleted successfully.`);
+      setTimeout(() => setRoleUpdateMsg(''), 4000);
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+      alert("Failed to delete user: " + err.message);
     }
   };
 
@@ -328,19 +355,30 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                           <h4 className="text-sm font-bold text-white truncate group-hover:text-purple-300 transition-colors">
                             {user.displayName || 'User'}
                           </h4>
-                          {/* Online / Offline Pill */}
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
-                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                              : 'bg-gray-900 text-gray-400 border-gray-700'
-                              }`}
-                          >
+                          {/* Online / Offline Pill & Admin Delete Option */}
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <span
-                              className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${online
+                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                                : 'bg-gray-900 text-gray-400 border-gray-700'
                                 }`}
-                            />
-                            {online ? 'Online' : 'Offline'}
-                          </span>
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+                                  }`}
+                              />
+                              {online ? 'Online' : 'Offline'}
+                            </span>
+                            {isAdmin && user.role !== 'admin' && user.id !== currentUser.uid && (
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                title={`Delete ${user.displayName || 'User'}`}
+                                className="p-1 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* {user.email && (
@@ -374,17 +412,31 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                       </p>
                     )}
 
-                    {/* Admin 1-Click Call Button */}
-                    <button
-                      onClick={() => initiateDirectCall(user)}
-                      className={`w-full py-2.5 px-3 rounded-xl active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md transition-all mt-auto ${online
-                        ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/30'
-                        : 'bg-gray-700/80 hover:bg-gray-600 text-gray-200'
-                        }`}
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      {user.role === 'teacher' ? 'Call Teacher' : user.role === 'admin' ? 'Call Admin' : 'Call Student'}
-                    </button>
+                    {/* Admin Calling Buttons: Video & Audio call options, ONLY IF ONLINE */}
+                    {online ? (
+                      <div className="grid grid-cols-2 gap-2 mt-auto">
+                        <button
+                          onClick={() => initiateDirectCall(user, 'video')}
+                          className="py-2 px-2.5 rounded-xl active:scale-95 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/30 transition-all"
+                          title="Start Video Call"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Video Call</span>
+                        </button>
+                        <button
+                          onClick={() => initiateDirectCall(user, 'audio')}
+                          className="py-2 px-2.5 rounded-xl active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all"
+                          title="Start Audio Call"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Audio Call</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-auto py-2 px-3 rounded-xl bg-gray-900/60 border border-gray-800 text-center text-xs text-gray-500 font-medium">
+                        User is currently offline
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -487,17 +539,31 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                       </p>
                     )}
 
-                    {/* 1-Click Call Student Button */}
-                    <button
-                      onClick={() => initiateDirectCall(student)}
-                      className={`w-full py-2.5 px-3 rounded-xl active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md transition-all mt-auto ${online
-                        ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/30'
-                        : 'bg-gray-700/80 hover:bg-gray-600 text-gray-200'
-                        }`}
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      Call Student
-                    </button>
+                    {/* Teacher Direct Call Buttons: Video & Audio call options, ONLY IF ONLINE */}
+                    {online ? (
+                      <div className="grid grid-cols-2 gap-2 mt-auto">
+                        <button
+                          onClick={() => initiateDirectCall(student, 'video')}
+                          className="py-2 px-2.5 rounded-xl active:scale-95 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/30 transition-all"
+                          title="Start Video Class"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Video Call</span>
+                        </button>
+                        <button
+                          onClick={() => initiateDirectCall(student, 'audio')}
+                          className="py-2 px-2.5 rounded-xl active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all"
+                          title="Start Audio Class"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Audio Call</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-auto py-2 px-3 rounded-xl bg-gray-900/60 border border-gray-800 text-center text-xs text-gray-500 font-medium">
+                        Student is offline
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -648,18 +714,23 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                         </td>
                         <td className="p-3.5 text-right">
                           <div className="inline-flex items-center justify-end gap-2">
-                            {user.id !== currentUser.uid && (
-                              <button
-                                onClick={() => initiateDirectCall(user)}
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-all ${online
-                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
-                                  : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700'
-                                  }`}
-                                title={`Direct Call ${user.displayName || 'User'}`}
-                              >
-                                <Phone className="w-3 h-3" />
-                                Call
-                              </button>
+                            {user.id !== currentUser.uid && online && (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() => initiateDirectCall(user, 'video')}
+                                  className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all"
+                                  title={`Video Call ${user.displayName || 'User'}`}
+                                >
+                                  <Video className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => initiateDirectCall(user, 'audio')}
+                                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all"
+                                  title={`Audio Call ${user.displayName || 'User'}`}
+                                >
+                                  <Phone className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             )}
                             <select
                               value={user.role || 'student'}
@@ -670,6 +741,15 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                               <option value="teacher">Teacher</option>
                               <option value="admin">Admin</option>
                             </select>
+                            {isAdmin && user.role !== 'admin' && user.id !== currentUser.uid && (
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                title={`Delete ${user.displayName || 'User'}`}
+                                className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
