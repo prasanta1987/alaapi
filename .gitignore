@@ -53,7 +53,9 @@ dist-ssr/
 
 # Backup directories
 backup_vanilla_v1/
-public/
+public/css/
+public/js/
+public/index.html
 
 # Local env files
 .env*.local

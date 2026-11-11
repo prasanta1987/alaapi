@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db, appId, doc, getDoc } from '../services/firebase';
+import { usePwaInstall } from '../hooks/usePwaInstall';
+import { IosInstallModal } from '../components/IosInstallModal';
 import {
   PlusCircle,
   LogIn,
@@ -10,11 +12,14 @@ import {
   Music,
   AlertCircle,
   Settings2,
-  Loader2
+  Loader2,
+  Download,
+  Smartphone
 } from 'lucide-react';
 
 export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
   const { currentUser, userProfile } = useAuth();
+  const { isInstallable, isStandalone, showIosGuide, setShowIosGuide, installApp } = usePwaInstall();
   const [joinRoomId, setJoinRoomId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isCheckingRoom, setIsCheckingRoom] = useState(false);
@@ -64,6 +69,35 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
             Hello, {currentUser ? currentUser.displayName : 'Guest'}
           </h1>
         </header>
+
+        {/* PWA Full-Screen Install Banner (Shown on mobile & desktop browsers until installed) */}
+        {isInstallable && !isStandalone && (
+          <div className="mb-3 sm:mb-4 p-2.5 sm:p-3 rounded-xl bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-gray-900 border border-purple-500/40 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-md">
+            <div className="flex items-center gap-2.5 text-center sm:text-left">
+              <div className="w-8 h-8 rounded-lg bg-purple-600/30 border border-purple-500/50 flex items-center justify-center text-purple-300 shrink-0">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-white flex items-center justify-center sm:justify-start gap-1.5">
+                  Install Alaapi App
+                  <span className="text-[10px] font-normal px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 border border-purple-500/40">
+                    Mobile App
+                  </span>
+                </h4>
+                <p className="text-[11px] text-gray-300">
+                  Install on your phone for a dedicated app window with mobile notifications and zero browser address bars.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={installApp}
+              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Install App
+            </button>
+          </div>
+        )}
 
         {/* Dashboard Direct Calling Banner for Logged-In Users */}
         {currentUser && (
@@ -154,7 +188,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
           </div>
         </div>
 
-        {/* Hardware Devices & Diagnostics Setup Button (Replaces old DSP button) */}
+        {/* Hardware Devices & Diagnostics Setup Button */}
         <div className="mt-3 flex justify-center">
           <button
             onClick={handleOpenSettings}
@@ -165,6 +199,9 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
           </button>
         </div>
       </div>
+
+      {/* iOS Installation Instructions Guide */}
+      <IosInstallModal isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
     </div>
   );
 }

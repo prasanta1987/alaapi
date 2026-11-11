@@ -47,7 +47,9 @@ import {
   Radio,
   AlertCircle,
   Clock,
-  FlipHorizontal
+  FlipHorizontal,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -69,6 +71,7 @@ export function CallStudioPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isLocalMirrored, setIsLocalMirrored] = useState(true);
+  const [isRemoteMirrored, setIsRemoteMirrored] = useState(false);
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [hasLocalVideo, setHasLocalVideo] = useState(true);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
@@ -238,6 +241,8 @@ export function CallStudioPage() {
             answer: null,
             callerCandidates: [],
             calleeCandidates: [],
+            callerMirrored: isLocalMirrored,
+            calleeMirrored: false,
             createdAt: new Date().toISOString(),
             status: 'active',
             host: currentUser ? {
@@ -258,6 +263,10 @@ export function CallStudioPage() {
 
             const data = snapshot.data();
             if (!data) return;
+
+            if (typeof data.calleeMirrored === 'boolean') {
+              setIsRemoteMirrored(data.calleeMirrored);
+            }
 
             if (data.answer && pc && pc.signalingState === 'have-local-offer') {
               const answerDesc = new RTCSessionDescription(data.answer);
@@ -302,6 +311,7 @@ export function CallStudioPage() {
 
                 await updateDoc(roomRef, {
                   answer: { type: answer.type, sdp: answer.sdp },
+                  calleeMirrored: isLocalMirrored,
                   guest: currentUser ? {
                     uid: currentUser.uid,
                     displayName: currentUser.displayName
@@ -313,6 +323,10 @@ export function CallStudioPage() {
                 console.error("Callee answer failed:", err);
                 discardCallSession("Failed to establish audio/video stream.", false);
               }
+            }
+
+            if (typeof data.callerMirrored === 'boolean') {
+              setIsRemoteMirrored(data.callerMirrored);
             }
 
             if (data.callerCandidates) {
@@ -465,6 +479,28 @@ export function CallStudioPage() {
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
   };
 
+  // Fullscreen state and handler
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.warn("Fullscreen request error:", err);
+      });
+    } else {
+      document.exitFullscreen().catch((err) => {
+        console.warn("Exit fullscreen error:", err);
+      });
+    }
+  };
+
   // Toggle local video mirror
   const handleToggleLocalMirror = (e) => {
     if (e) e.stopPropagation();
@@ -477,6 +513,14 @@ export function CallStudioPage() {
           localVideoRef.current.classList.remove('scale-x-[-1]');
         }
       }
+
+      // Sync mirror state to Firestore room doc so peer's screen mirrors this video feed in real-time
+      if (roomId) {
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+        const mirrorField = isCaller ? 'callerMirrored' : 'calleeMirrored';
+        updateDoc(roomRef, { [mirrorField]: next }).catch(err => console.warn("Failed to sync mirror state:", err));
+      }
+
       return next;
     });
   };
@@ -491,14 +535,26 @@ export function CallStudioPage() {
           <span>{formatDuration(callDuration)}</span>
         </div>
 
-        {/* Remote Video Stream */}
+        {/* Remote Video Stream (Mirrors automatically when peer mirrors their camera) */}
         <video
           ref={remoteVideoRef}
           id="remoteVideo"
-          className="w-full h-full object-contain mx-auto"
+          className={`w-full h-full object-contain mx-auto transition-transform ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
           autoPlay
           playsInline
         />
+
+        {/* Remote Video Mirror Toggle Button */}
+        {remoteConnected && (
+          <button
+            onClick={() => setIsRemoteMirrored(prev => !prev)}
+            title={isRemoteMirrored ? "Switch Remote Video to Normal" : "Mirror Remote Video Feed"}
+            className="absolute bottom-3 left-3 z-20 bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+          >
+            <FlipHorizontal className="w-3.5 h-3.5 text-purple-400" />
+            <span className="text-[10px] hidden sm:inline">{isRemoteMirrored ? "Remote Mirrored" : "Mirror Remote"}</span>
+          </button>
+        )}
 
         {/* Remote Placeholder when waiting */}
         {!remoteConnected && (
@@ -511,7 +567,7 @@ export function CallStudioPage() {
         )}
 
         {/* Mobile Top Overlay: Room ID, Call Timer & WhatsApp Share Button */}
-        <div className="mobile-top-bar absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
+        <div className="mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none">
           <div className="flex items-center gap-1.5 pointer-events-auto">
             {/* Small Call Running Timer Pill on Mobile */}
             <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-gray-200 flex items-center gap-1.5 border border-purple-500/30 shadow">
@@ -533,7 +589,7 @@ export function CallStudioPage() {
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
             <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
             <span className="text-sm font-mono font-bold text-purple-400 tracking-wider">{roomId}</span>
-            {/* Share via WhatsApp button (replaces copy icon on mobile) */}
+            {/* Share via WhatsApp button */}
             <button
               onClick={shareViaWhatsApp}
               className="text-emerald-400 hover:text-emerald-300 p-0.5 transition-colors flex items-center justify-center"
@@ -634,6 +690,13 @@ export function CallStudioPage() {
                 className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
               >
                 {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={handleToggleFullscreen}
+                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
             </div>
           </div>
