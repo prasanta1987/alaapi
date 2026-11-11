@@ -66,7 +66,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
         {/* Header Title */}
         <header className="text-center mb-3 sm:mb-4">
           <h1 className="text-xl sm:text-2xl md:text-5xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-500 tracking-tight mb-1">
-            Hello, {currentUser ? currentUser.displayName : 'Guest'}
+            Hello, {currentUser ? currentUser.displayName : 'Guest'} !
           </h1>
         </header>
 

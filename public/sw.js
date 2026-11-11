@@ -1,5 +1,5 @@
 // Alaapi PWA Service Worker
-const CACHE_NAME = 'alaapi-pwa-v2';
+const CACHE_NAME = 'alaapi-pwa-v2.1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -83,11 +83,11 @@ self.addEventListener('fetch', (event) => {
   if (
     url.origin === self.location.origin &&
     (url.pathname.startsWith('/assets/') ||
-     url.pathname.endsWith('.js') ||
-     url.pathname.endsWith('.css') ||
-     url.pathname.endsWith('.png') ||
-     url.pathname.endsWith('.svg') ||
-     url.pathname.endsWith('.woff2'))
+      url.pathname.endsWith('.js') ||
+      url.pathname.endsWith('.css') ||
+      url.pathname.endsWith('.png') ||
+      url.pathname.endsWith('.svg') ||
+      url.pathname.endsWith('.woff2'))
   ) {
     event.respondWith(
       caches.match(req).then((cached) => {
