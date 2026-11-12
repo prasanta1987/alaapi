@@ -96,7 +96,8 @@ export function CallProvider({ children }) {
   const initiateDirectCall = async (student, callType = 'video') => {
     if (!currentUser) return;
 
-    const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+    // Generate clean 6-digit numeric Room ID for easy sharing
+    const roomId = Math.floor(100000 + Math.random() * 900000).toString();
     const callsRef = collection(db, 'artifacts', appId, 'public', 'data', 'calls');
     const callDocRef = doc(callsRef);
 

@@ -2,10 +2,86 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Open to all for public WebRTC signaling
-    match /{document=**} {
-      allow read, write: if true;
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'prasanta.ani@gmail.com';
+    }
+
+    function isAdmin(appId) {
+      return isSuperAdmin() || (
+        isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/public/data/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/artifacts/$(appId)/public/data/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    match /artifacts/{appId}/public/data {
+
+      // 1. User Directory & Profile Management
+      match /users/{userId} {
+        // Authenticated users can view the user directory (online status, teacher/student listings)
+        allow read: if isAuthenticated();
+
+        // Users can create their own profile document on login
+        allow create: if isOwner(userId) && (
+          request.resource.data.role != 'admin' || isSuperAdmin()
+        );
+
+        // Profile updates:
+        // - Owners can update their profile (heartbeat, online status, bio, instrument, phone, etc.)
+        //   Owners cannot alter their own 'role' unless already an Admin.
+        // - Admins can update any user's profile and assign roles (teacher, student, admin)
+        allow update: if (
+          (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin(appId))) ||
+          isAdmin(appId)
+        );
+
+        // Account deletion:
+        // - Only Admins can delete users.
+        // - Admins CANNOT delete other Admins (only students & teachers can be deleted).
+        allow delete: if isAdmin(appId) && resource.data.role != 'admin';
+      }
+
+      // 2. Direct Calling Sessions
+      match /calls/{callId} {
+        // Only users involved in the call can read it
+        allow read: if isAuthenticated() && (
+          resource.data.callerId == request.auth.uid ||
+          resource.data.calleeId == request.auth.uid
+        );
+
+        // Caller can initiate a ringing call
+        allow create: if isAuthenticated() && request.resource.data.callerId == request.auth.uid;
+
+        // Either party can update the call status (accept, decline, end)
+        allow update: if isAuthenticated() && (
+          resource.data.callerId == request.auth.uid ||
+          resource.data.calleeId == request.auth.uid
+        );
+
+        // Either party or Admin can delete the call session document
+        allow delete: if isAuthenticated() && (
+          resource.data.callerId == request.auth.uid ||
+          resource.data.calleeId == request.auth.uid ||
+          isAdmin(appId)
+        );
+      }
+
+      // 3. WebRTC Class Rooms (Signaling)
+      match /rooms/{roomId} {
+        // Publicly accessible for WebRTC peer signaling so students and guests
+        // can join instant sessions with 6-digit room IDs without login barriers.
+        allow read, write: if true;
+      }
     }
   }
 }
-

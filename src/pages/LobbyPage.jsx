@@ -26,7 +26,8 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
   const navigate = useNavigate();
 
   const handleCreateRoom = () => {
-    const newRoomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+    // Generate clean 6-digit numeric Room ID for easy sharing
+    const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
     navigate(`/room/${newRoomId}?isCaller=true`);
   };
 
@@ -138,7 +139,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
             </div>
             <h2 className="text-base sm:text-lg font-bold mb-1 text-gray-100">Create a Class Room</h2>
             <p className="text-gray-400 text-xs mb-3 leading-snug">
-              Start an instant session with a 5-letter Room ID to share with your peer.
+              Start an instant session with a 6-digit Room ID to share with your peer.
             </p>
             <button
               onClick={handleCreateRoom}
@@ -155,12 +156,12 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
             </div>
             <h2 className="text-base sm:text-lg font-bold mb-1 text-gray-100">Join a Class Room</h2>
             <p className="text-gray-400 text-xs mb-2 leading-snug">
-              Enter the Room ID provided by your host or teacher to join.
+              Enter the 6-digit Room ID provided by your host or teacher to join.
             </p>
             <form onSubmit={handleJoinRoom} className="w-full flex flex-col gap-2 mt-auto">
               <input
                 type="text"
-                placeholder="ENTER ROOM ID"
+                placeholder="ENTER 6-DIGIT ROOM ID"
                 value={joinRoomId}
                 onChange={(e) => {
                   setJoinRoomId(e.target.value.toUpperCase());

@@ -64,7 +64,6 @@ export function CallStudioPage() {
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const wakeLockBadgeRef = useRef(null);
 
   const [statusText, setStatusText] = useState('Initializing acoustic studio...');
   const [copiedRoomId, setCopiedRoomId] = useState(false);
@@ -201,7 +200,7 @@ export function CallStudioPage() {
           }
         }
 
-        await requestScreenWakeLock(wakeLockBadgeRef.current);
+        await requestScreenWakeLock();
 
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
 
@@ -471,14 +470,6 @@ export function CallStudioPage() {
     });
   };
 
-  // Share Room Link via WhatsApp
-  const shareViaWhatsApp = () => {
-    const meetingUrl = `${window.location.origin}/room/${roomId}`;
-    const message = `Join my Alaapi music class session:\n${meetingUrl}`;
-    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-  };
-
   // Fullscreen state and handler
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   useEffect(() => {
@@ -529,12 +520,6 @@ export function CallStudioPage() {
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
       {/* 1. Main Remote Stage */}
       <div id="remoteStage" className="relative flex-1 min-h-0 w-full h-full bg-black rounded-none overflow-hidden flex items-center justify-center">
-        {/* Call Timer Overlay Badge on Remote Stage (Desktop/Wide screens) */}
-        <div className="absolute top-3 left-3 z-20 hidden sm:flex items-center gap-1.5 px-3 py-1 bg-gray-900/85 backdrop-blur rounded-full border border-gray-700/80 font-mono text-xs font-semibold text-gray-200 shadow-md">
-          <Clock className="w-3.5 h-3.5 text-purple-400" />
-          <span>{formatDuration(callDuration)}</span>
-        </div>
-
         {/* Remote Video Stream (Mirrors automatically when peer mirrors their camera) */}
         <video
           ref={remoteVideoRef}
@@ -566,38 +551,25 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Mobile Top Overlay: Room ID, Call Timer & WhatsApp Share Button */}
+        {/* Mobile Top Overlay: Call Timer & Room ID (Only displayed when sidebar panel is not visible) */}
         <div className="mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none">
           <div className="flex items-center gap-1.5 pointer-events-auto">
-            {/* Small Call Running Timer Pill on Mobile */}
-            <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-gray-200 flex items-center gap-1.5 border border-purple-500/30 shadow">
+            {/* Call Running Timer on Mobile / Video Feed */}
+            <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/30 shadow">
               <Clock className="w-3 h-3 text-purple-400" />
               <span>{formatDuration(callDuration)}</span>
-            </div>
-
-            {remoteConnected && (
-              <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-green-400 flex items-center gap-1.5 border border-green-500/30 shadow">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                Raw Audio
-              </div>
-            )}
-            <div ref={wakeLockBadgeRef} className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-semibold text-blue-400 flex items-center gap-1.5 border border-blue-500/30 shadow">
-              Awake
             </div>
           </div>
 
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
             <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
-            <span className="text-sm font-mono font-bold text-purple-400 tracking-wider">{roomId}</span>
-            {/* Share via WhatsApp button */}
+            <span className="text-sm font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
             <button
-              onClick={shareViaWhatsApp}
-              className="text-emerald-400 hover:text-emerald-300 p-0.5 transition-colors flex items-center justify-center"
-              title="Share Room link via WhatsApp"
+              onClick={copyRoomId}
+              title="Copy Room ID"
+              className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
             >
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.054-1.077-.087-1.189-.379-2.126-1.282-2.735-2.029-.071-.088-.135-.17-.193-.243-.377-.478-.65-.824-.65-1.42 0-.629.33-.938.448-1.06.118-.122.257-.153.342-.153.085 0 .17.002.245.006.079.004.184-.03.287.218.106.255.362.883.394.948.032.065.053.141.01.226-.042.085-.064.138-.127.212-.064.074-.134.166-.191.223-.064.064-.131.134-.056.262.074.128.33.543.708.88.487.433.897.568 1.025.632.128.064.202.053.277-.032.074-.085.319-.372.404-.5.085-.128.17-.106.287-.064.117.042.744.351.872.415.128.064.213.096.245.149.032.053.032.308-.112.713zM12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.975-1.306A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18.167c-1.636 0-3.15-.494-4.417-1.341l-.317-.212-2.955.775.789-2.88-.231-.368A8.136 8.136 0 013.833 12c0-4.503 3.664-8.167 8.167-8.167 4.503 0 8.167 3.664 8.167 8.167 0 4.503-3.664 8.167-8.167 8.167z"/>
-              </svg>
+              {copiedRoomId ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>
@@ -676,13 +648,11 @@ export function CallStudioPage() {
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={shareViaWhatsApp}
-                title="Share Meeting via WhatsApp"
-                className="text-emerald-400 hover:text-emerald-300 p-1 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
+                onClick={copyRoomId}
+                title="Copy Room ID"
+                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
               >
-                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                  <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.054-1.077-.087-1.189-.379-2.126-1.282-2.735-2.029-.071-.088-.135-.17-.193-.243-.377-.478-.65-.824-.65-1.42 0-.629.33-.938.448-1.06.118-.122.257-.153.342-.153.085 0 .17.002.245.006.079.004.184-.03.287.218.106.255.362.883.394.948.032.065.053.141.01.226-.042.085-.064.138-.127.212-.064.074-.134.166-.191.223-.064.064-.131.134-.056.262.074.128.33.543.708.88.487.433.897.568 1.025.632.128.064.202.053.277-.032.074-.085.319-.372.404-.5.085-.128.17-.106.287-.064.117.042.744.351.872.415.128.064.213.096.245.149.032.053.032.308-.112.713zM12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.975-1.306A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18.167c-1.636 0-3.15-.494-4.417-1.341l-.317-.212-2.955.775.789-2.88-.231-.368A8.136 8.136 0 013.833 12c0-4.503 3.664-8.167 8.167-8.167 4.503 0 8.167 3.664 8.167 8.167 0 4.503-3.664 8.167-8.167 8.167z"/>
-                </svg>
+                {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
               </button>
               <button
                 onClick={copyRoomId}
