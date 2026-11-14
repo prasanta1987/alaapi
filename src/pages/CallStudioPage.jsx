@@ -30,7 +30,9 @@ import {
   initPeerConnection,
   processRemoteCandidates,
   closePeerConnection,
-  pc
+  pc,
+  optimizeSdpForMusic,
+  optimizeAudioSenders
 } from '../services/webrtc';
 import {
   Mic,
@@ -48,7 +50,9 @@ import {
   Maximize2,
   Minimize2,
   Scan,
-  Wifi
+  Wifi,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -79,6 +83,7 @@ export function CallStudioPage() {
   const [micLevel, setMicLevel] = useState(0); // 0..100
   const [pingRtt, setPingRtt] = useState(null); // in ms
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [remoteVolume, setRemoteVolume] = useState(100); // 0..100% monitor volume
 
   // Mobile controls auto-dimmer
   const [isControlsDimmed, setIsControlsDimmed] = useState(false);
@@ -396,9 +401,14 @@ export function CallStudioPage() {
                         pc.restartIce();
                       }
                       const offer = await pc.createOffer({ iceRestart: true });
-                      await pc.setLocalDescription(offer);
+                      const musicOffer = new RTCSessionDescription({
+                        type: offer.type,
+                        sdp: optimizeSdpForMusic(offer.sdp)
+                      });
+                      await pc.setLocalDescription(musicOffer);
+                      await optimizeAudioSenders(pc);
                       await updateDoc(roomRef, {
-                        offer: { type: offer.type, sdp: offer.sdp },
+                        offer: { type: musicOffer.type, sdp: musicOffer.sdp },
                         answer: null
                       });
                     } catch (e) {
@@ -465,8 +475,13 @@ export function CallStudioPage() {
           }, { merge: true });
 
           const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          await updateDoc(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
+          const musicOffer = new RTCSessionDescription({
+            type: offer.type,
+            sdp: optimizeSdpForMusic(offer.sdp)
+          });
+          await pc.setLocalDescription(musicOffer);
+          await optimizeAudioSenders(pc);
+          await updateDoc(roomRef, { offer: { type: musicOffer.type, sdp: musicOffer.sdp } });
 
           roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
             if (!snapshot.exists()) {
@@ -486,6 +501,7 @@ export function CallStudioPage() {
               lastAppliedAnswerSdp.current = data.answer.sdp;
               const answerDesc = new RTCSessionDescription(data.answer);
               await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
+              await optimizeAudioSenders(pc);
               setStatusText("Participant joined! Connecting...");
 
               if (unansweredTimeoutRef.current) {
@@ -527,10 +543,15 @@ export function CallStudioPage() {
                 await pc.setRemoteDescription(offerDesc);
 
                 const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
+                const musicAnswer = new RTCSessionDescription({
+                  type: answer.type,
+                  sdp: optimizeSdpForMusic(answer.sdp)
+                });
+                await pc.setLocalDescription(musicAnswer);
+                await optimizeAudioSenders(pc);
 
                 await updateDoc(roomRef, {
-                  answer: { type: answer.type, sdp: answer.sdp },
+                  answer: { type: musicAnswer.type, sdp: musicAnswer.sdp },
                   calleeMirrored: isLocalMirrored,
                   guest: currentUser ? {
                     uid: currentUser.uid,
@@ -708,6 +729,15 @@ export function CallStudioPage() {
       document.exitFullscreen().catch((err) => {
         console.warn("Exit fullscreen error:", err);
       });
+    }
+  };
+
+  // Adjust incoming remote audio monitor volume
+  const handleVolumeChange = (newVol) => {
+    const clamped = Math.max(0, Math.min(100, newVol));
+    setRemoteVolume(clamped);
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.volume = clamped / 100;
     }
   };
 
@@ -1051,6 +1081,35 @@ export function CallStudioPage() {
               {renderNetworkVuMeter()}
             </div>
           </div>
+
+          {/* Remote Acoustic Monitor Volume Slider */}
+          {remoteConnected && (
+            <div className="flex items-center gap-2 pt-1 border-t border-gray-800">
+              <button
+                type="button"
+                onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
+                title={remoteVolume === 0 ? "Unmute Monitor" : "Mute Monitor"}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                {remoteVolume === 0 ? (
+                  <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                )}
+              </button>
+              <span className="text-[10px] font-medium text-gray-400 shrink-0">Monitor:</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={remoteVolume}
+                onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                title={`Acoustic monitor volume: ${remoteVolume}%`}
+              />
+              <span className="text-[10px] font-mono text-gray-300 w-7 text-right shrink-0">{remoteVolume}%</span>
+            </div>
+          )}
 
           {/* Status Display */}
           <div className="pt-1 border-t border-gray-800">

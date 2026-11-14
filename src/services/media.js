@@ -100,9 +100,17 @@ export function buildAudioConstraints(deviceId = null) {
     // Standard AEC requires mono in WebRTC
     constraints.channelCount = { ideal: 1 };
   } else {
-    // Lossless high-fidelity stereo musical dynamics (48kHz)
+    // Studio Master High-Fidelity Music Constraints:
+    // Pure 48kHz stereo, zero speech compression filters, ultra-low latency hardware buffers
     constraints.channelCount = { ideal: 2 };
     constraints.sampleRate = { ideal: 48000 };
+    constraints.sampleSize = { ideal: 16 };
+    constraints.latency = { ideal: 0.005 };
+    constraints.googAutoGainControl2 = false;
+    constraints.googNoiseSuppression2 = false;
+    constraints.googHighpassFilter = false;
+    constraints.googTypingNoiseDetection = false;
+    constraints.googAudioMirroring = false;
   }
 
   const preferred = getPreferredDevices();

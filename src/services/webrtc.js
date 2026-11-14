@@ -268,3 +268,129 @@ export function closePeerConnection() {
   calleeMinusCallerSkew = 0;
   syncMessageCallback = null;
 }
+
+// ==========================================================================
+// High-Fidelity Studio Music Audio Optimization (OPUS 256kbps Stereo CBR)
+// ==========================================================================
+
+export function optimizeSdpForMusic(sdp) {
+  if (!sdp || typeof sdp !== 'string') return sdp;
+
+  // Split lines on CRLF or LF, preserve clean format
+  const rawLines = sdp.split(/\r\n|\n/);
+  const lines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
+  const modifiedLines = [];
+  let opusPayloadType = null;
+  let inAudioMedia = false;
+
+  // 1. Locate Opus payload type (typically 111)
+  for (const line of lines) {
+    const match = line.match(/^a=rtpmap:(\d+)\s+opus\/48000/i);
+    if (match) {
+      opusPayloadType = match[1];
+      break;
+    }
+  }
+
+  // 2. Inject audio bandwidth and high-fidelity Opus parameters
+  let fmtpLineFound = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith('m=audio')) {
+      inAudioMedia = true;
+      modifiedLines.push(line);
+      // Boost maximum audio bandwidth allocation to 256kbps
+      modifiedLines.push('b=AS:256');
+      modifiedLines.push('b=TIAS:256000');
+      continue;
+    } else if (line.startsWith('m=')) {
+      inAudioMedia = false;
+    }
+
+    // Skip any prior b=AS or b=TIAS in audio block so we do not duplicate
+    if (inAudioMedia && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+      continue;
+    }
+
+    if (inAudioMedia && opusPayloadType && line.startsWith(`a=fmtp:${opusPayloadType}`)) {
+      fmtpLineFound = true;
+      let existingParams = line.substring(`a=fmtp:${opusPayloadType} `.length);
+      const paramMap = new Map();
+
+      existingParams.split(';').forEach(p => {
+        const parts = p.trim().split('=');
+        if (parts[0]) {
+          paramMap.set(parts[0].toLowerCase(), parts[1] || '');
+        }
+      });
+
+      // Studio Master Music Constraints:
+      // stereo=1 & sprop-stereo=1: Lossless stereo imaging
+      // maxaveragebitrate=256000: Broadcast CD-quality bitrate
+      // maxplaybackrate=48000 & sprop-maxcapturerate=48000: Full 48kHz acoustic spectrum
+      // cbr=1: Constant bitrate (guarantees soft vocal alaaps & quiet tanpura hums are never truncated)
+      // useinbandfec=1: Adaptive packet loss recovery
+      // minptime=10: Micro-latency audio packetization
+      paramMap.set('stereo', '1');
+      paramMap.set('sprop-stereo', '1');
+      paramMap.set('maxaveragebitrate', '256000');
+      paramMap.set('maxplaybackrate', '48000');
+      paramMap.set('sprop-maxcapturerate', '48000');
+      paramMap.set('cbr', '1');
+      paramMap.set('useinbandfec', '1');
+      paramMap.set('minptime', '10');
+
+      const reconstructed = Array.from(paramMap.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join(';');
+
+      modifiedLines.push(`a=fmtp:${opusPayloadType} ${reconstructed}`);
+      continue;
+    }
+
+    modifiedLines.push(line);
+  }
+
+  // If there was no fmtp line for Opus, synthesize one immediately after rtpmap
+  if (!fmtpLineFound && opusPayloadType) {
+    const rtpIndex = modifiedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPayloadType}`));
+    if (rtpIndex !== -1) {
+      modifiedLines.splice(
+        rtpIndex + 1,
+        0,
+        `a=fmtp:${opusPayloadType} minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;sprop-maxcapturerate=48000;cbr=1`
+      );
+    }
+  }
+
+  return modifiedLines.join('\r\n') + '\r\n';
+}
+
+export async function optimizeAudioSenders(peerConnection) {
+  if (!peerConnection || typeof peerConnection.getSenders !== 'function') return;
+
+  try {
+    const senders = peerConnection.getSenders();
+    for (const sender of senders) {
+      if (sender.track && sender.track.kind === 'audio') {
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) {
+          params.encodings = [{}];
+        }
+        params.encodings.forEach(enc => {
+          enc.maxBitrate = 256000; // 256kbps audio
+          enc.priority = 'high';
+          enc.networkPriority = 'high';
+          enc.dtx = 'disabled'; // Never cut audio during soft vocal sustains
+        });
+        await sender.setParameters(params);
+        console.log("[WebRTC Audio] Audio sender optimized: 256kbps stereo CBR, DTX disabled, high network priority.");
+      }
+    }
+  } catch (err) {
+    console.warn("[WebRTC Audio] Sender optimization notice:", err);
+  }
+}
+
