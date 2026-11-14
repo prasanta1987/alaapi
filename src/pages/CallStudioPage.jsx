@@ -84,6 +84,8 @@ export function CallStudioPage() {
   const [pingRtt, setPingRtt] = useState(null); // in ms
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [remoteVolume, setRemoteVolume] = useState(100); // 0..100% monitor volume
+  const [showVolumePopover, setShowVolumePopover] = useState(false);
+  const [activeAudioStream, setActiveAudioStream] = useState(() => localStream);
 
   // Mobile controls auto-dimmer
   const [isControlsDimmed, setIsControlsDimmed] = useState(false);
@@ -146,47 +148,93 @@ export function CallStudioPage() {
 
   // 3. Local Mic VU Level Analyzer (0..100)
   useEffect(() => {
-    let analyserInterval = null;
+    if (isMuted || !activeAudioStream || activeAudioStream.getAudioTracks().length === 0) {
+      setMicLevel(0);
+      return;
+    }
+
+    let isCancelled = false;
     let micAudioCtx = null;
+    let animFrame = null;
 
     try {
-      if (localStream && localStream.getAudioTracks().length > 0) {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-          micAudioCtx = new AudioContextClass();
-          const source = micAudioCtx.createMediaStreamSource(localStream);
-          const analyser = micAudioCtx.createAnalyser();
-          analyser.fftSize = 256;
-          source.connect(analyser);
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
 
-          analyserInterval = setInterval(() => {
-            if (isMuted || !localStream || localStream.getAudioTracks().length === 0) {
-              setMicLevel(0);
-              return;
-            }
-            analyser.getByteFrequencyData(dataArray);
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-              sum += dataArray[i];
-            }
-            const avg = sum / dataArray.length;
-            const normalized = Math.min(100, Math.round((avg / 128) * 100));
-            setMicLevel(normalized);
-          }, 120);
-        }
+      micAudioCtx = new AudioContextClass();
+      if (micAudioCtx.state === 'suspended') {
+        micAudioCtx.resume().catch(() => {});
       }
+
+      // Resume context on first user pointerdown/click if browser blocks autoplay
+      const unlockCtx = () => {
+        if (micAudioCtx && micAudioCtx.state === 'suspended') {
+          micAudioCtx.resume().catch(() => {});
+        }
+      };
+      window.addEventListener('pointerdown', unlockCtx, { once: true });
+      window.addEventListener('keydown', unlockCtx, { once: true });
+
+      const source = micAudioCtx.createMediaStreamSource(activeAudioStream);
+      const analyser = micAudioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
+      const timeData = new Uint8Array(analyser.fftSize);
+
+      const updateMeter = () => {
+        if (isCancelled) return;
+
+        if (micAudioCtx.state === 'suspended') {
+          micAudioCtx.resume().catch(() => {});
+        }
+
+        // Measure frequency energy
+        analyser.getByteFrequencyData(freqData);
+        let freqSum = 0;
+        let peak = 0;
+        for (let i = 0; i < freqData.length; i++) {
+          freqSum += freqData[i];
+          if (freqData[i] > peak) peak = freqData[i];
+        }
+        const freqAvg = freqSum / freqData.length;
+
+        // Measure time-domain waveform
+        analyser.getByteTimeDomainData(timeData);
+        let timeSquares = 0;
+        for (let i = 0; i < timeData.length; i++) {
+          const norm = (timeData[i] - 128) / 128;
+          timeSquares += norm * norm;
+        }
+        const rms = Math.sqrt(timeSquares / timeData.length);
+
+        // Responsive percentage (0..100)
+        const rmsPercent = Math.min(100, Math.round(rms * 220));
+        const freqPercent = Math.min(100, Math.round((freqAvg / 90) * 100));
+        const peakPercent = Math.min(100, Math.round((peak / 240) * 100));
+
+        const level = Math.max(rmsPercent, Math.round((freqPercent * 0.4) + (peakPercent * 0.6)));
+        setMicLevel(level);
+
+        animFrame = requestAnimationFrame(updateMeter);
+      };
+
+      updateMeter();
     } catch (e) {
       console.warn("Could not start local mic level analyzer:", e);
     }
 
     return () => {
-      if (analyserInterval) clearInterval(analyserInterval);
+      isCancelled = true;
+      if (animFrame) cancelAnimationFrame(animFrame);
       if (micAudioCtx) {
-        micAudioCtx.close().catch(() => {});
+        try { micAudioCtx.close(); } catch (e) {}
       }
+      setMicLevel(0);
     };
-  }, [hasLocalAudio, isMuted]);
+  }, [activeAudioStream, isMuted]);
 
   // 4. Live WebRTC Stats Ping Polling (every 3s when connected)
   useEffect(() => {
@@ -312,6 +360,7 @@ export function CallStudioPage() {
           stopLocalMedia(localVideoRef.current);
           return;
         }
+        setActiveAudioStream(stream);
 
         const vTracks = stream.getVideoTracks();
         const aTracks = stream.getAudioTracks();
@@ -442,6 +491,7 @@ export function CallStudioPage() {
                 localVideo: localVideoRef.current,
                 pc
               });
+              if (localStream) setActiveAudioStream(localStream);
             }
           } catch (e) {
             console.warn("Hot-plug recovery warning:", e);
@@ -699,6 +749,7 @@ export function CallStudioPage() {
 
     if (localStream) {
       setHasLocalVideo(localStream.getVideoTracks().length > 0);
+      setActiveAudioStream(localStream);
     }
   };
 
@@ -922,6 +973,43 @@ export function CallStudioPage() {
               <Scan className="w-3.5 h-3.5 text-purple-400" />
               <span className="text-[10px] hidden sm:inline">{isRemoteZoomed ? "Fill / Zoom" : "Fit"}</span>
             </button>
+
+            {/* Mobile & Desktop Monitor Volume Trigger */}
+            <div className="relative">
+              <button
+                onClick={() => setShowVolumePopover(prev => !prev)}
+                title="Incoming Monitor Volume"
+                className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+              >
+                {remoteVolume === 0 ? (
+                  <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                )}
+                <span className="text-[10px] font-mono">{remoteVolume}%</span>
+              </button>
+
+              {showVolumePopover && (
+                <div className="absolute bottom-full left-0 mb-2 p-3 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl flex items-center gap-2.5 z-30 min-w-[170px] animate-fadeIn">
+                  <button
+                    type="button"
+                    onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    {remoteVolume === 0 ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-purple-400" />}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={remoteVolume}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                    className="w-24 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <span className="text-[10px] font-mono text-gray-300 w-6 text-right">{remoteVolume}%</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
