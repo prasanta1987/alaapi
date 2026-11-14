@@ -53,11 +53,16 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const { initiateDirectCall, callNotice, setCallNotice } = useCall();
   const handleOpenSettings = onOpenDeviceSetup || onOpenAudioSettings;
 
+  const role = userProfile?.role || 'student';
+  const isTeacher = role === 'teacher' || isAdmin;
+
   const [allUsers, setAllUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminTab, setAdminTab] = useState('all'); // 'all', 'students', 'teachers'
   const [roleUpdateMsg, setRoleUpdateMsg] = useState('');
+  const [selectedRingtone, setSelectedRingtone] = useState(getSelectedRingtone());
+  const [isPlayingTestTone, setIsPlayingTestTone] = useState(false);
 
   // Periodic tick (every 10 seconds) to ensure real-time Online/Offline status updates
   const [, setTick] = useState(0);
@@ -65,90 +70,6 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
     const timer = setInterval(() => setTick(t => t + 1), 10000);
     return () => clearInterval(timer);
   }, []);
-
-  // Fetch all registered users in real time for user management & directory
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
-    const unsubscribe = onSnapshot(usersRef, (snapshot) => {
-      const usersList = [];
-      snapshot.forEach(docSnap => {
-        usersList.push({ id: docSnap.id, ...docSnap.data() });
-      });
-      setAllUsers(usersList);
-      setLoadingUsers(false);
-    }, (err) => {
-      console.warn("Error fetching users list:", err);
-      setLoadingUsers(false);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser]);
-
-  // Handle changing user role (Admin only)
-  const handleRoleChange = async (targetUid, newRole) => {
-    try {
-      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUid);
-      await updateDoc(userRef, { role: newRole });
-      setRoleUpdateMsg(`Role updated to ${newRole} successfully.`);
-      setTimeout(() => setRoleUpdateMsg(''), 3000);
-    } catch (err) {
-      console.error("Failed to update role:", err);
-    }
-  };
-
-  // Handle deleting user (Admin only, cannot delete other admins)
-  const handleDeleteUser = async (targetUser) => {
-    if (!isAdmin) return;
-    if (targetUser.role === 'admin' || targetUser.id === currentUser.uid) {
-      alert("Admin accounts cannot be deleted.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Are you sure you want to permanently delete "${targetUser.displayName || targetUser.email || 'this user'}" (${targetUser.role || 'student'})?\n\nThis will remove their account profile from the platform.`
-    );
-    if (!confirmed) return;
-
-    try {
-      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUser.id);
-      await deleteDoc(userRef);
-      setRoleUpdateMsg(`User "${targetUser.displayName || targetUser.email}" was deleted successfully.`);
-      setTimeout(() => setRoleUpdateMsg(''), 4000);
-    } catch (err) {
-      console.error("Failed to delete user:", err);
-      alert("Failed to delete user: " + err.message);
-    }
-  };
-
-  if (!currentUser) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
-          <div className="w-14 h-14 rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center mx-auto mb-4">
-            <Users className="w-7 h-7" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Vocal Class Portal</h2>
-          <p className="text-gray-400 text-xs sm:text-sm mb-6">
-            Sign in with your Google account to access your student directory, direct 1-click calls, and role management.
-          </p>
-          <button
-            onClick={loginWithGoogle}
-            className="w-full py-3 px-6 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-purple-900/30 transition-all flex items-center justify-center gap-2"
-          >
-            Sign In with Google
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const role = userProfile?.role || 'student';
-  const isTeacher = role === 'teacher' || isAdmin;
-
-  const [selectedRingtone, setSelectedRingtone] = useState(getSelectedRingtone());
-  const [isPlayingTestTone, setIsPlayingTestTone] = useState(false);
 
   // 1. One-time pointerdown/keydown listener to unlock Web Audio on mobile/desktop browsers
   useEffect(() => {
@@ -207,6 +128,84 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
 
     cleanupStaleData();
   }, [currentUser, isTeacher]);
+
+  // Fetch all registered users in real time for user management & directory
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
+    const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+      const usersList = [];
+      snapshot.forEach(docSnap => {
+        usersList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      setAllUsers(usersList);
+      setLoadingUsers(false);
+    }, (err) => {
+      console.warn("Error fetching users list:", err);
+      setLoadingUsers(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Handle changing user role (Admin only)
+  const handleRoleChange = async (targetUid, newRole) => {
+    try {
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUid);
+      await updateDoc(userRef, { role: newRole });
+      setRoleUpdateMsg(`Role updated to ${newRole} successfully.`);
+      setTimeout(() => setRoleUpdateMsg(''), 3000);
+    } catch (err) {
+      console.error("Failed to update role:", err);
+    }
+  };
+
+  // Handle deleting user (Admin only, cannot delete other admins)
+  const handleDeleteUser = async (targetUser) => {
+    if (!isAdmin) return;
+    if (targetUser.role === 'admin' || targetUser.id === currentUser?.uid) {
+      alert("Admin accounts cannot be deleted.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete "${targetUser.displayName || targetUser.email || 'this user'}" (${targetUser.role || 'student'})?\n\nThis will remove their account profile from the platform.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUser.id);
+      await deleteDoc(userRef);
+      setRoleUpdateMsg(`User "${targetUser.displayName || targetUser.email}" was deleted successfully.`);
+      setTimeout(() => setRoleUpdateMsg(''), 4000);
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+      alert("Failed to delete user: " + err.message);
+    }
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center mx-auto mb-4">
+            <Users className="w-7 h-7" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Vocal Class Portal</h2>
+          <p className="text-gray-400 text-xs sm:text-sm mb-6">
+            Sign in with your Google account to access your student directory, direct 1-click calls, and role management.
+          </p>
+          <button
+            onClick={loginWithGoogle}
+            className="w-full py-3 px-6 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-purple-900/30 transition-all flex items-center justify-center gap-2"
+          >
+            Sign In with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Filter students
   const studentsList = allUsers.filter(u =>
