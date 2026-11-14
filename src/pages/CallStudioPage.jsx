@@ -6,7 +6,6 @@ import {
   appId,
   doc,
   setDoc,
-  getDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -18,16 +17,14 @@ import {
   stopLocalMedia,
   toggleAudioMute,
   toggleVideoFeed,
-  setVideoFeedEnabled,
-  toggleCameraFacingMode,
-  setCameraFacingMode,
   currentFacingMode,
   isMobileDevice,
   handleDeviceSwitch,
   requestScreenWakeLock,
   releaseScreenWakeLock,
   setupOrientationListeners,
-  updateOrientationClasses
+  updateOrientationClasses,
+  getPreferredDevices
 } from '../services/media';
 import {
   initPeerConnection,
@@ -49,7 +46,8 @@ import {
   Clock,
   FlipHorizontal,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Scan
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -58,7 +56,6 @@ export function CallStudioPage() {
   const isCaller = searchParams.get('isCaller') === 'true';
   const callId = searchParams.get('callId');
   const calleeName = searchParams.get('calleeName');
-  const callType = searchParams.get('callType') || 'video'; // 'video' | 'audio'
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
@@ -71,10 +68,19 @@ export function CallStudioPage() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isLocalMirrored, setIsLocalMirrored] = useState(true);
   const [isRemoteMirrored, setIsRemoteMirrored] = useState(false);
+  const [isRemoteZoomed, setIsRemoteZoomed] = useState(false);
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [hasLocalVideo, setHasLocalVideo] = useState(true);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
   const [errorModalMsg, setErrorModalMsg] = useState(null);
+
+  // Health Diagnostics: Mic Level & Ping
+  const [micLevel, setMicLevel] = useState(0); // 0..100
+  const [pingRtt, setPingRtt] = useState(null); // in ms
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
+  // Mobile controls auto-dimmer
+  const [isControlsDimmed, setIsControlsDimmed] = useState(false);
 
   // Available camera devices for in-call switching
   const [cameras, setCameras] = useState([]);
@@ -83,6 +89,15 @@ export function CallStudioPage() {
   // Call running duration timer
   const [callDuration, setCallDuration] = useState(0);
 
+  // Navigation & lifecycle refs
+  const isLeavingRef = useRef(false);
+  const disconnectTimerRef = useRef(null);
+  const iceRestartTimerRef = useRef(null);
+  const unansweredTimeoutRef = useRef(null);
+  const lastAppliedAnswerSdp = useRef(null);
+  const lastAnsweredOfferSdp = useRef(null);
+
+  // 1. Call Running Timer
   useEffect(() => {
     const timerInterval = setInterval(() => {
       setCallDuration(prev => prev + 1);
@@ -103,7 +118,121 @@ export function CallStudioPage() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // 1. Initial setup and lifecycle
+  // 2. Flat Navigation & Accidental Back-Swipe Interception Guard
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = () => {
+      if (isLeavingRef.current) return;
+      const leave = window.confirm('Leave the live singing class?');
+      if (leave) {
+        handleLeaveCall();
+      } else {
+        window.history.pushState(null, '', window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  // 3. Local Mic VU Level Analyzer (0..100)
+  useEffect(() => {
+    let analyserInterval = null;
+    let micAudioCtx = null;
+
+    try {
+      if (localStream && localStream.getAudioTracks().length > 0) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          micAudioCtx = new AudioContextClass();
+          const source = micAudioCtx.createMediaStreamSource(localStream);
+          const analyser = micAudioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+          analyserInterval = setInterval(() => {
+            if (isMuted || !localStream || localStream.getAudioTracks().length === 0) {
+              setMicLevel(0);
+              return;
+            }
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const avg = sum / dataArray.length;
+            const normalized = Math.min(100, Math.round((avg / 128) * 100));
+            setMicLevel(normalized);
+          }, 120);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not start local mic level analyzer:", e);
+    }
+
+    return () => {
+      if (analyserInterval) clearInterval(analyserInterval);
+      if (micAudioCtx) {
+        micAudioCtx.close().catch(() => {});
+      }
+    };
+  }, [hasLocalAudio, isMuted]);
+
+  // 4. Live WebRTC Stats Ping Polling (every 3s when connected)
+  useEffect(() => {
+    if (!remoteConnected) {
+      setPingRtt(null);
+      return;
+    }
+
+    const pollStats = () => {
+      if (!pc || pc.connectionState === 'closed') return;
+      pc.getStats().then(stats => {
+        stats.forEach(report => {
+          if (report.type === 'candidate-pair' && report.state === 'succeeded' && typeof report.currentRoundTripTime === 'number') {
+            setPingRtt(Math.round(report.currentRoundTripTime * 1000));
+          }
+        });
+      }).catch(() => {});
+    };
+
+    pollStats();
+    const statsInterval = setInterval(pollStats, 3000);
+    return () => clearInterval(statsInterval);
+  }, [remoteConnected]);
+
+  // 5. Mobile Controls Auto-Dimmer after 5s idle during active call
+  useEffect(() => {
+    if (!remoteConnected) {
+      setIsControlsDimmed(false);
+      return;
+    }
+
+    let dimTimer = setTimeout(() => setIsControlsDimmed(true), 5000);
+
+    const resetIdleTimer = () => {
+      setIsControlsDimmed(false);
+      clearTimeout(dimTimer);
+      dimTimer = setTimeout(() => setIsControlsDimmed(true), 5000);
+    };
+
+    window.addEventListener('pointermove', resetIdleTimer);
+    window.addEventListener('touchstart', resetIdleTimer);
+    window.addEventListener('click', resetIdleTimer);
+
+    return () => {
+      clearTimeout(dimTimer);
+      window.removeEventListener('pointermove', resetIdleTimer);
+      window.removeEventListener('touchstart', resetIdleTimer);
+      window.removeEventListener('click', resetIdleTimer);
+    };
+  }, [remoteConnected]);
+
+  // 6. Main WebRTC Session Lifecycle
   useEffect(() => {
     let roomUnsubscribe = null;
     let callUnsubscribe = null;
@@ -115,6 +244,11 @@ export function CallStudioPage() {
     const discardCallSession = async (message, shouldDelete = false) => {
       if (isTerminated) return;
       isTerminated = true;
+      isLeavingRef.current = true;
+
+      if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
+      if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
+      if (unansweredTimeoutRef.current) clearTimeout(unansweredTimeoutRef.current);
 
       if (roomUnsubscribe) {
         roomUnsubscribe();
@@ -146,10 +280,10 @@ export function CallStudioPage() {
       stopLocalMedia(localVideoRef.current);
       releaseScreenWakeLock();
 
-      if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended"))) {
+      if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended") || message.includes("No answer"))) {
         setErrorModalMsg(message);
       } else {
-        navigate(currentUser ? '/dashboard' : '/');
+        navigate(currentUser ? '/dashboard' : '/', { replace: true });
       }
     };
 
@@ -167,36 +301,28 @@ export function CallStudioPage() {
 
     const startCall = async () => {
       try {
-        setStatusText("Detecting audio and camera devices...");
         const stream = await setupLocalMedia(localVideoRef.current);
-
-        const videoTracks = stream ? stream.getVideoTracks() : [];
-        const audioTracks = stream ? stream.getAudioTracks() : [];
-        setHasLocalVideo(videoTracks.length > 0);
-        setHasLocalAudio(audioTracks.length > 0);
-
-        // If audio-only call, start with video disabled (user can still toggle on anytime)
-        if (callType === 'audio') {
-          setIsVideoOff(true);
-          setVideoFeedEnabled(false);
+        if (isTerminated) {
+          stopLocalMedia(localVideoRef.current);
+          return;
         }
 
-        // Populate camera list for in-call camera switching
+        const vTracks = stream.getVideoTracks();
+        const aTracks = stream.getAudioTracks();
+        setHasLocalVideo(vTracks.length > 0);
+        setHasLocalAudio(aTracks.length > 0);
+
+        // Enumerate video devices
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoDevices = devices.filter(d => d.kind === 'videoinput');
           setCameras(videoDevices);
 
-          // Detect active track's actual deviceId and facingMode
-          const activeTrack = videoTracks[0];
-          const activeSettings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
-          if (activeSettings.deviceId) {
-            setSelectedCam(activeSettings.deviceId);
+          const preferred = getPreferredDevices();
+          if (preferred.cameraId && videoDevices.some(d => d.deviceId === preferred.cameraId)) {
+            setSelectedCam(preferred.cameraId);
           } else if (videoDevices.length > 0) {
             setSelectedCam(videoDevices[0].deviceId);
-          }
-          if (activeSettings.facingMode) {
-            setCameraFacingMode(activeSettings.facingMode);
           }
         }
 
@@ -204,7 +330,7 @@ export function CallStudioPage() {
 
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
 
-        // WebRTC initialization
+        // WebRTC initialization with automatic ICE restart and connection recovery
         initPeerConnection({
           localStream: stream,
           isCaller,
@@ -212,8 +338,21 @@ export function CallStudioPage() {
             if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
               remoteVideoRef.current.srcObject = remoteStream;
               remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
+
+              // Route remote audio to user's preferred speaker if set
+              const preferred = getPreferredDevices();
+              if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
+                remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+              }
+
               setRemoteConnected(true);
+              setIsReconnecting(false);
               setStatusText("Connected! High-fidelity audio active.");
+
+              if (unansweredTimeoutRef.current) {
+                clearTimeout(unansweredTimeoutRef.current);
+                unansweredTimeoutRef.current = null;
+              }
             }
           },
           onIceCandidate: async (candidate) => {
@@ -222,11 +361,85 @@ export function CallStudioPage() {
             await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
           },
           onConnectionStateChange: (state) => {
-            if (state === 'failed') {
-              discardCallSession("Connection lost.", true);
+            console.log(`[WebRTC] Connection state: ${state}`);
+
+            if (state === 'connected' || state === 'completed') {
+              if (disconnectTimerRef.current) {
+                clearTimeout(disconnectTimerRef.current);
+                disconnectTimerRef.current = null;
+              }
+              if (iceRestartTimerRef.current) {
+                clearTimeout(iceRestartTimerRef.current);
+                iceRestartTimerRef.current = null;
+              }
+              setIsReconnecting(false);
+              setStatusText("Connected! High-fidelity audio active.");
+            } else if (state === 'disconnected' || state === 'failed') {
+              setIsReconnecting(true);
+              setStatusText("Network interruption... Reconnecting...");
+
+              // 14-second hard disconnect limit
+              if (!disconnectTimerRef.current) {
+                disconnectTimerRef.current = setTimeout(() => {
+                  discardCallSession("Connection lost.", true);
+                }, 14000);
+              }
+
+              // Automatic ICE restart by caller after 2.5s grace period
+              if (isCaller && !iceRestartTimerRef.current) {
+                iceRestartTimerRef.current = setTimeout(async () => {
+                  if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+                    try {
+                      console.log("[WebRTC] Executing automatic ICE restart...");
+                      if (typeof pc.restartIce === 'function') {
+                        pc.restartIce();
+                      }
+                      const offer = await pc.createOffer({ iceRestart: true });
+                      await pc.setLocalDescription(offer);
+                      await updateDoc(roomRef, {
+                        offer: { type: offer.type, sdp: offer.sdp },
+                        answer: null
+                      });
+                    } catch (e) {
+                      console.warn("ICE restart failed:", e);
+                    }
+                  }
+                }, 2500);
+              }
             }
           }
         });
+
+        // 45-Second Unanswered Ring Timeout for caller
+        if (isCaller) {
+          unansweredTimeoutRef.current = setTimeout(() => {
+            if (!remoteConnected && !isTerminated) {
+              discardCallSession("No answer from participant. Please try calling again.", true);
+            }
+          }, 45000);
+        }
+
+        // USB / Headset Hot-Plug Recovery Listener
+        const handleDeviceChange = async () => {
+          try {
+            const audioTracks = localStream ? localStream.getAudioTracks() : [];
+            const hasEndedAudio = audioTracks.some(t => t.readyState === 'ended');
+            const preferred = getPreferredDevices();
+            if (hasEndedAudio || preferred.micId) {
+              await handleDeviceSwitch({
+                selectedMicId: preferred.micId || '',
+                localVideo: localVideoRef.current,
+                pc
+              });
+            }
+          } catch (e) {
+            console.warn("Hot-plug recovery warning:", e);
+          }
+        };
+
+        if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+          navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+        }
 
         if (isCaller) {
           setStatusText(
@@ -254,7 +467,7 @@ export function CallStudioPage() {
           await pc.setLocalDescription(offer);
           await updateDoc(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
 
-          roomUnsubscribe = onSnapshot(roomRef, (snapshot) => {
+          roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
             if (!snapshot.exists()) {
               discardCallSession("Call ended: Room closed.", false);
               return;
@@ -267,27 +480,34 @@ export function CallStudioPage() {
               setIsRemoteMirrored(data.calleeMirrored);
             }
 
-            if (data.answer && pc && pc.signalingState === 'have-local-offer') {
+            // Apply answer when it arrives and differs from last applied answer
+            if (data.answer && data.answer.sdp && data.answer.sdp !== lastAppliedAnswerSdp.current && pc && pc.signalingState === 'have-local-offer') {
+              lastAppliedAnswerSdp.current = data.answer.sdp;
               const answerDesc = new RTCSessionDescription(data.answer);
-              pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
+              await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
               setStatusText("Participant joined! Connecting...");
+
+              if (unansweredTimeoutRef.current) {
+                clearTimeout(unansweredTimeoutRef.current);
+                unansweredTimeoutRef.current = null;
+              }
             }
+
             processRemoteCandidates(data.calleeCandidates);
           });
         } else {
-          // Joining as callee - asynchronously await host offer
+          // Joining as callee - await host offer
           setStatusText(`Connecting to Room [${roomId}]...`);
 
-          let answered = false;
           const notFoundTimer = setTimeout(() => {
-            if (!answered && !isTerminated) {
+            if (!remoteConnected && !isTerminated) {
               discardCallSession(`Room "${roomId}" not found or host unavailable.`, false);
             }
           }, 15000);
 
           roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
             if (!snapshot.exists()) {
-              if (answered) {
+              if (lastAnsweredOfferSdp.current) {
                 discardCallSession("The host has ended the call.", false);
               }
               return;
@@ -296,10 +516,10 @@ export function CallStudioPage() {
             const data = snapshot.data();
             if (!data) return;
 
-            // When host's offer is populated and callee hasn't answered yet
-            if (data.offer && !answered && pc) {
+            // When host's offer is populated and differs from last answered offer
+            if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc) {
               try {
-                answered = true;
+                lastAnsweredOfferSdp.current = data.offer.sdp;
                 clearTimeout(notFoundTimer);
 
                 const offerDesc = new RTCSessionDescription(data.offer);
@@ -365,6 +585,7 @@ export function CallStudioPage() {
 
   // Leave Call action
   const handleLeaveCall = async () => {
+    isLeavingRef.current = true;
     try {
       if (roomId) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
@@ -380,7 +601,7 @@ export function CallStudioPage() {
     closePeerConnection();
     stopLocalMedia(localVideoRef.current);
     releaseScreenWakeLock();
-    navigate(currentUser ? '/dashboard' : '/');
+    navigate(currentUser ? '/dashboard' : '/', { replace: true });
   };
 
   // Toggle Microphone
@@ -395,17 +616,15 @@ export function CallStudioPage() {
     setIsVideoOff(stopped);
   };
 
-  // Switch camera: toggles between front and back camera on mobile (Motorola/Android/iOS) or cycles webcams on desktop
+  // Switch camera: toggles between front and back camera on mobile or cycles webcams on desktop
   const handleFlipCamera = async () => {
     if (!hasLocalVideo) return;
 
     const isMobile = isMobileDevice();
 
     if (isMobile) {
-      // Toggle facing mode: front ('user') <-> back ('environment')
       const nextFacing = currentFacingMode === 'user' ? 'environment' : 'user';
 
-      // If multiple camera sensors are reported, find a sensor matching the desired facing mode
       let targetCamId = '';
       if (cameras.length > 1) {
         const matchingCam = cameras.find(c => {
@@ -435,7 +654,6 @@ export function CallStudioPage() {
         pc
       });
     } else {
-      // Desktop: cycle through attached USB cameras
       if (cameras.length > 1) {
         const currentIndex = cameras.findIndex(c => c.deviceId === selectedCam);
         const nextIndex = (currentIndex + 1) % cameras.length;
@@ -492,9 +710,8 @@ export function CallStudioPage() {
     }
   };
 
-  // Toggle local video mirror
-  const handleToggleLocalMirror = (e) => {
-    if (e) e.stopPropagation();
+  // Toggle local mirror mode
+  const handleToggleLocalMirror = () => {
     setIsLocalMirrored(prev => {
       const next = !prev;
       if (localVideoRef.current) {
@@ -516,29 +733,85 @@ export function CallStudioPage() {
     });
   };
 
+  // Diagnostic Health Pill (VU Meter + Ping)
+  const renderDiagnosticPill = () => (
+    <div className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow">
+      {/* 4-bar mini VU meter */}
+      <div className="flex items-end gap-0.5 h-3 px-0.5" title={isMuted ? "Microphone Muted" : `Mic Pickup: ${micLevel}%`}>
+        {[1, 2, 3, 4].map(barIndex => {
+          const threshold = barIndex * 22;
+          const active = !isMuted && micLevel >= threshold;
+          return (
+            <span
+              key={barIndex}
+              style={{ height: `${barIndex * 2.5 + 2}px` }}
+              className={`w-1 rounded-full transition-all duration-75 ${
+                isMuted
+                  ? 'bg-red-500/40'
+                  : active
+                  ? barIndex >= 4 ? 'bg-amber-400' : 'bg-emerald-400'
+                  : 'bg-gray-700'
+              }`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Connection Ping / Reconnecting Status */}
+      {isReconnecting ? (
+        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-400 animate-pulse">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          Reconnecting...
+        </span>
+      ) : pingRtt !== null ? (
+        <span className="flex items-center gap-1 text-[10px] font-mono font-medium text-gray-300" title={`Round-Trip Time: ${pingRtt}ms`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${
+            pingRtt < 150 ? 'bg-emerald-400' : pingRtt < 350 ? 'bg-amber-400' : 'bg-red-400'
+          }`} />
+          {pingRtt}ms
+        </span>
+      ) : (
+        <span className="flex items-center gap-1 text-[10px] font-mono text-gray-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          48kHz
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
       {/* 1. Main Remote Stage */}
       <div id="remoteStage" className="relative flex-1 min-h-0 w-full h-full bg-black rounded-none overflow-hidden flex items-center justify-center">
-        {/* Remote Video Stream (Mirrors automatically when peer mirrors their camera) */}
+        {/* Remote Video Stream (Mirrors automatically when peer mirrors their camera; Fit/Fill Zoom toggles dynamically) */}
         <video
           ref={remoteVideoRef}
           id="remoteVideo"
-          className={`w-full h-full object-contain mx-auto transition-transform ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
+          className={`w-full h-full ${isRemoteZoomed ? 'object-cover' : 'object-contain'} mx-auto transition-transform ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
           autoPlay
           playsInline
         />
 
-        {/* Remote Video Mirror Toggle Button */}
+        {/* Remote Video Actions: Mirror Toggle & Fit / Fill Zoom Toggle */}
         {remoteConnected && (
-          <button
-            onClick={() => setIsRemoteMirrored(prev => !prev)}
-            title={isRemoteMirrored ? "Switch Remote Video to Normal" : "Mirror Remote Video Feed"}
-            className="absolute bottom-3 left-3 z-20 bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
-          >
-            <FlipHorizontal className="w-3.5 h-3.5 text-purple-400" />
-            <span className="text-[10px] hidden sm:inline">{isRemoteMirrored ? "Remote Mirrored" : "Mirror Remote"}</span>
-          </button>
+          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+            <button
+              onClick={() => setIsRemoteMirrored(prev => !prev)}
+              title={isRemoteMirrored ? "Switch Remote Video to Normal" : "Mirror Remote Video Feed"}
+              className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+            >
+              <FlipHorizontal className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-[10px] hidden sm:inline">{isRemoteMirrored ? "Remote Mirrored" : "Mirror Remote"}</span>
+            </button>
+            <button
+              onClick={() => setIsRemoteZoomed(prev => !prev)}
+              title={isRemoteZoomed ? "Switch to Fit (Contain)" : "Switch to Fill / Zoom (Cover)"}
+              className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+            >
+              <Scan className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-[10px] hidden sm:inline">{isRemoteZoomed ? "Fill / Zoom" : "Fit"}</span>
+            </button>
+          </div>
         )}
 
         {/* Remote Placeholder when waiting */}
@@ -551,14 +824,19 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Mobile Top Overlay: Call Timer & Room ID (Only displayed when sidebar panel is not visible) */}
-        <div className="mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none">
+        {/* Mobile Top Overlay: Call Timer, Health Diagnostic Pill & Room ID (Auto-dims on mobile idle) */}
+        <div className={`mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none transition-opacity duration-300 ${
+          isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
+        }`}>
           <div className="flex items-center gap-1.5 pointer-events-auto">
             {/* Call Running Timer on Mobile / Video Feed */}
             <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/30 shadow">
               <Clock className="w-3 h-3 text-purple-400" />
               <span>{formatDuration(callDuration)}</span>
             </div>
+
+            {/* Diagnostic Health Pill */}
+            {renderDiagnosticPill()}
           </div>
 
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
@@ -638,7 +916,7 @@ export function CallStudioPage() {
           </div>
         </div>
 
-        {/* Middle: Session Info (Clean Desktop Card with Room ID & Call Duration) */}
+        {/* Middle: Session Info (Clean Desktop Card with Room ID, Call Duration & Health) */}
         <div className="sidebar-info-card flex-col gap-2.5 p-3.5 bg-gray-950/70 rounded-xl border border-gray-800 text-xs">
           {/* Room ID Row */}
           <div className="flex items-center justify-between bg-gray-900/90 px-3 py-2 rounded-lg border border-purple-500/30">
@@ -647,13 +925,6 @@ export function CallStudioPage() {
               <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={copyRoomId}
-                title="Copy Room ID"
-                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-              >
-                {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-              </button>
               <button
                 onClick={copyRoomId}
                 title="Copy Room ID"
@@ -671,12 +942,16 @@ export function CallStudioPage() {
             </div>
           </div>
 
-          {/* Call Running Timer & Connection Status */}
-          <div className="flex items-center justify-between pt-1 border-t border-gray-800">
+          {/* Call Running Timer, Diagnostic Health & Connection Status */}
+          <div className="flex items-center justify-between pt-1 border-t border-gray-800 gap-2">
             <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-1 rounded-md border border-purple-500/30">
               <Clock className="w-3.5 h-3.5 text-purple-400" />
               <span>{formatDuration(callDuration)}</span>
             </div>
+
+            {/* Diagnostic Health Pill on Desktop Sidebar */}
+            {renderDiagnosticPill()}
+
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
               remoteConnected
                 ? 'bg-green-950/50 text-green-400 border-green-500/40'
@@ -694,13 +969,15 @@ export function CallStudioPage() {
           </div>
         </div>
 
-        {/* Bottom: In-Call Studio Controls */}
+        {/* Bottom: In-Call Studio Controls (Auto-dims on mobile idle) */}
         <div className="w-full flex flex-col gap-2 shrink-0">
           <div className="sidebar-header text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
             Studio Controls
           </div>
 
-          <nav id="mediaControls" className="pointer-events-auto shrink-0">
+          <nav id="mediaControls" className={`pointer-events-auto shrink-0 transition-opacity duration-300 ${
+            isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
+          }`}>
             {/* Mic Toggle */}
             <button
               onClick={handleAudioToggle}
@@ -774,7 +1051,7 @@ export function CallStudioPage() {
             <h3 className="text-base font-bold text-white mb-2">Class Session Notice</h3>
             <p className="text-xs text-gray-300 mb-5 leading-relaxed">{errorModalMsg}</p>
             <button
-              onClick={() => navigate(currentUser ? '/dashboard' : '/')}
+              onClick={() => navigate(currentUser ? '/dashboard' : '/', { replace: true })}
               className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all"
             >
               Return to {currentUser ? 'Dashboard' : 'Lobby'}

@@ -7,6 +7,7 @@ import { LobbyPage } from './pages/LobbyPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EditRolePage } from './pages/EditRolePage';
 import { CallStudioPage } from './pages/CallStudioPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { IncomingCallModal } from './components/IncomingCallModal';
 import { OutgoingCallModal } from './components/OutgoingCallModal';
 import { ProfileModal } from './components/ProfileModal';
@@ -60,6 +61,7 @@ export function AppContent() {
             />
             <Route path="/editroll" element={<EditRolePage />} />
             <Route path="/editroles" element={<EditRolePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route
               path="*"
               element={

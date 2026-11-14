@@ -74,7 +74,7 @@ export function CallProvider({ children }) {
     }
 
     setIncomingCall(null);
-    navigate(`/room/${targetRoomId}?callType=${callType}&calleeName=${encodeURIComponent(incomingCall.callerName || 'Teacher')}`);
+    navigate(`/room/${targetRoomId}?callType=${callType}&calleeName=${encodeURIComponent(incomingCall.callerName || 'Teacher')}`, { replace: true });
   };
 
   // Decline incoming call
@@ -136,7 +136,7 @@ export function CallProvider({ children }) {
     }
 
     // Host navigates straight to Call Studio as Caller, establishing room and offer
-    navigate(`/room/${roomId}?isCaller=true&callId=${callDocRef.id}&callType=${callType}&calleeName=${encodeURIComponent(student.displayName || 'Student')}`);
+    navigate(`/room/${roomId}?isCaller=true&callId=${callDocRef.id}&callType=${callType}&calleeName=${encodeURIComponent(student.displayName || 'Student')}`, { replace: true });
   };
 
   // Cancel outgoing call

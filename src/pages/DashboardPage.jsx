@@ -9,8 +9,21 @@ import {
   onSnapshot,
   doc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  getDocs
 } from '../services/firebase';
+import {
+  RINGTONE_OPTIONS,
+  getSelectedRingtone,
+  saveSelectedRingtone,
+  previewRingtone,
+  stopRingtone,
+  unlockAudioContext
+} from '../services/ringtone';
+import {
+  requestScreenWakeLock,
+  releaseScreenWakeLock
+} from '../services/media';
 import {
   Users,
   GraduationCap,
@@ -28,7 +41,10 @@ import {
   Clock,
   ArrowRight,
   Sliders,
-  Sparkles
+  Sparkles,
+  Play,
+  Square,
+  Bell
 } from 'lucide-react';
 import { UserAvatar } from '../components/UserAvatar';
 
@@ -130,6 +146,67 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
 
   const role = userProfile?.role || 'student';
   const isTeacher = role === 'teacher' || isAdmin;
+
+  const [selectedRingtone, setSelectedRingtone] = useState(getSelectedRingtone());
+  const [isPlayingTestTone, setIsPlayingTestTone] = useState(false);
+
+  // 1. One-time pointerdown/keydown listener to unlock Web Audio on mobile/desktop browsers
+  useEffect(() => {
+    const handleUnlock = () => {
+      unlockAudioContext();
+      window.removeEventListener('pointerdown', handleUnlock);
+      window.removeEventListener('keydown', handleUnlock);
+    };
+    window.addEventListener('pointerdown', handleUnlock);
+    window.addEventListener('keydown', handleUnlock);
+    return () => {
+      window.removeEventListener('pointerdown', handleUnlock);
+      window.removeEventListener('keydown', handleUnlock);
+    };
+  }, []);
+
+  // 2. Student Standby Wake Lock (prevents phone screen from sleeping while waiting for teacher call)
+  useEffect(() => {
+    if (currentUser && role === 'student') {
+      requestScreenWakeLock().catch(() => {});
+      return () => {
+        releaseScreenWakeLock();
+      };
+    }
+  }, [currentUser, role]);
+
+  // 3. Silent one-time cleanup of calls and rooms older than 3 hours (Admin / Teacher only)
+  useEffect(() => {
+    if (!currentUser || !isTeacher) return;
+
+    const cleanupStaleData = async () => {
+      try {
+        const threeHoursAgo = Date.now() - 3 * 3600 * 1000;
+
+        const callsRef = collection(db, 'artifacts', appId, 'public', 'data', 'calls');
+        const callsSnap = await getDocs(callsRef);
+        callsSnap.forEach(d => {
+          const data = d.data();
+          if (data.createdAt && new Date(data.createdAt).getTime() < threeHoursAgo) {
+            deleteDoc(d.ref).catch(() => {});
+          }
+        });
+
+        const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
+        const roomsSnap = await getDocs(roomsRef);
+        roomsSnap.forEach(d => {
+          const data = d.data();
+          if (data.createdAt && new Date(data.createdAt).getTime() < threeHoursAgo) {
+            deleteDoc(d.ref).catch(() => {});
+          }
+        });
+      } catch (e) {
+        console.warn("Silent cleanup skipped:", e);
+      }
+    };
+
+    cleanupStaleData();
+  }, [currentUser, isTeacher]);
 
   // Filter students
   const studentsList = allUsers.filter(u =>
@@ -575,15 +652,69 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
       {/* 3. STUDENT VIEW: STANDBY MODE & TEACHERS */}
       {!isAdmin && role === 'student' && (
         <section className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-4">
-          <div className="bg-gradient-to-r from-blue-900/40 via-purple-900/30 to-gray-900 border border-blue-500/30 rounded-2xl p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
-              <Radio className="w-6 h-6 animate-pulse" />
+          <div className="bg-gradient-to-r from-blue-900/40 via-purple-900/30 to-gray-900 border border-blue-500/30 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+                <Radio className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  Student Live Standby Mode
+                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-green-950/60 text-green-400 border border-green-500/30">
+                    Awake & Ready
+                  </span>
+                </h3>
+                <p className="text-xs text-gray-300 mt-0.5 leading-relaxed">
+                  Keep this tab open. When your instructor initiates a class, your selected melody will ring and you can accept with 1 click.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-white">Student Live Standby Mode</h3>
-              <p className="text-xs text-gray-300 mt-0.5 leading-relaxed">
-                Keep this web app open. When your teacher or instructor initiates a class, an <strong>audible ringtone</strong> will play and you can accept the call with 1 click without typing a Room ID.
-              </p>
+
+            {/* Ringtone Selection & Preview in Standby Mode */}
+            <div className="w-full md:w-auto flex flex-wrap items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-gray-800/80 shrink-0">
+              <div className="flex items-center gap-1.5 bg-gray-950/80 px-2.5 py-1.5 rounded-xl border border-gray-700 shadow-inner">
+                <Bell className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <select
+                  value={selectedRingtone}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    saveSelectedRingtone(id);
+                    setSelectedRingtone(id);
+                    if (isPlayingTestTone) {
+                      previewRingtone(id);
+                    }
+                  }}
+                  className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer pr-1"
+                >
+                  {RINGTONE_OPTIONS.map(opt => (
+                    <option key={opt.id} value={opt.id} className="bg-gray-900 text-white">
+                      {opt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => {
+                  setIsPlayingTestTone(true);
+                  previewRingtone(selectedRingtone);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-xs font-semibold flex items-center gap-1 transition-all shadow"
+                title="Preview Ringtone"
+              >
+                <Play className="w-3 h-3 fill-current" />
+                Test
+              </button>
+              <button
+                onClick={() => {
+                  setIsPlayingTestTone(false);
+                  stopRingtone();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 active:scale-95 text-gray-300 hover:text-white text-xs font-semibold flex items-center gap-1 border border-gray-700 transition-all shadow"
+                title="Stop Ringtone"
+              >
+                <Square className="w-3 h-3 fill-current" />
+                Stop
+              </button>
             </div>
           </div>
 

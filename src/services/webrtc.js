@@ -220,11 +220,15 @@ export function initPeerConnection({
     }
   };
 
-  pc.onconnectionstatechange = () => {
+  const handleStateChange = () => {
     if (onConnectionStateChange && pc) {
-      onConnectionStateChange(pc.connectionState);
+      const state = pc.connectionState || pc.iceConnectionState;
+      onConnectionStateChange(state);
     }
   };
+
+  pc.onconnectionstatechange = handleStateChange;
+  pc.oniceconnectionstatechange = handleStateChange;
 
   return pc;
 }

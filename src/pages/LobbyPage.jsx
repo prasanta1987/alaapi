@@ -28,14 +28,14 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
   const handleCreateRoom = () => {
     // Generate clean 6-digit numeric Room ID for easy sharing
     const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
-    navigate(`/room/${newRoomId}?isCaller=true`);
+    navigate(`/room/${newRoomId}?isCaller=true`, { replace: true });
   };
 
   const handleJoinRoom = async (e) => {
     e.preventDefault();
-    const cleanId = joinRoomId.trim().toUpperCase();
-    if (!cleanId) {
-      setErrorMsg("Please enter a valid Room ID.");
+    const cleanId = joinRoomId.trim();
+    if (!cleanId || cleanId.length !== 6) {
+      setErrorMsg("Please enter a valid 6-digit Room ID.");
       return;
     }
 
@@ -56,7 +56,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
     }
 
     setIsCheckingRoom(false);
-    navigate(`/room/${cleanId}`);
+    navigate(`/room/${cleanId}`, { replace: true });
   };
 
   const handleOpenSettings = onOpenDeviceSetup || onOpenAudioSettings;
@@ -161,15 +161,18 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
             <form onSubmit={handleJoinRoom} className="w-full flex flex-col gap-2 mt-auto">
               <input
                 type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 placeholder="ENTER 6-DIGIT ROOM ID"
                 value={joinRoomId}
                 onChange={(e) => {
-                  setJoinRoomId(e.target.value.toUpperCase());
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setJoinRoomId(val);
                   if (errorMsg) setErrorMsg('');
                 }}
                 maxLength={6}
                 disabled={isCheckingRoom}
-                className="w-full px-3 py-1.5 bg-gray-900/90 border border-gray-600 rounded-xl text-center text-white font-mono text-sm focus:outline-none focus:border-green-500 uppercase placeholder-gray-600 shadow-inner disabled:opacity-50"
+                className="w-full px-3 py-2 bg-gray-900/90 border border-gray-600 rounded-xl text-center text-white font-mono text-base tracking-widest focus:outline-none focus:border-green-500 placeholder-gray-600 shadow-inner disabled:opacity-50"
               />
               {errorMsg && (
                 <p className="text-[11px] text-red-400 flex items-center justify-center gap-1 font-medium bg-red-950/40 py-1 px-2 rounded-lg border border-red-500/30">

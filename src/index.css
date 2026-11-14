@@ -311,7 +311,7 @@ body.layout-sidepanel #mediaControls button {
 }
 
 #remoteVideo {
-  object-fit: contain !important;
+  object-fit: contain;
 }
 
 /* Animations */

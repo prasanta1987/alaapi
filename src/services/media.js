@@ -302,6 +302,8 @@ export function stopLocalMedia(localVideoElement = null) {
   if (localVideoElement) {
     localVideoElement.srcObject = null;
   }
+  isAudioMuted = false;
+  isVideoStopped = false;
 }
 
 export function toggleAudioMute(button = null, iconOn = null, iconOff = null) {
@@ -481,7 +483,20 @@ export async function handleDeviceSwitch({ selectedCamId, selectedMicId, facingM
   }
 }
 
+let shouldKeepAwake = false;
+let wakeLockVisibilityAttached = false;
+
+if (typeof document !== 'undefined' && !wakeLockVisibilityAttached) {
+  wakeLockVisibilityAttached = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && shouldKeepAwake) {
+      requestScreenWakeLock().catch(() => {});
+    }
+  });
+}
+
 export async function requestScreenWakeLock(wakeLockBadge = null) {
+  shouldKeepAwake = true;
   if ('wakeLock' in navigator) {
     if (wakeLock !== null && !wakeLock.released) return;
 
@@ -500,11 +515,14 @@ export async function requestScreenWakeLock(wakeLockBadge = null) {
 }
 
 export function releaseScreenWakeLock() {
+  shouldKeepAwake = false;
   if (wakeLock !== null) {
     wakeLock.release().catch(() => { });
     wakeLock = null;
   }
 }
+
+let orientationListenersAttached = false;
 
 export function setupOrientationListeners() {
   let resizeTimer = null;
@@ -514,22 +532,26 @@ export function setupOrientationListeners() {
     updateLocalVideoAspectRatio();
   };
 
-  window.addEventListener('orientationchange', () => {
-    setTimeout(handleOrientation, 200);
-  });
+  if (!orientationListenersAttached && typeof window !== 'undefined') {
+    orientationListenersAttached = true;
 
-  if (typeof window !== 'undefined' && window.screen && window.screen.orientation) {
-    window.screen.orientation.addEventListener('change', () => {
+    window.addEventListener('orientationchange', () => {
       setTimeout(handleOrientation, 200);
     });
-  }
 
-  window.addEventListener('resize', () => {
-    if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      handleOrientation();
-    }, 120);
-  });
+    if (window.screen && window.screen.orientation) {
+      window.screen.orientation.addEventListener('change', () => {
+        setTimeout(handleOrientation, 200);
+      });
+    }
+
+    window.addEventListener('resize', () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        handleOrientation();
+      }, 120);
+    });
+  }
 
   handleOrientation();
 }
