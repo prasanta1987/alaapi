@@ -788,9 +788,9 @@ export function CallStudioPage() {
 
     if (!remoteConnected) {
       activeBars = 1;
-      barColor = 'bg-gray-500';
-      textColor = 'text-gray-400';
-      label = 'Waiting';
+      barColor = 'bg-gray-700';
+      textColor = 'text-gray-500';
+      label = '';
     } else if (isReconnecting) {
       activeBars = 1;
       barColor = 'bg-amber-400 animate-pulse';
@@ -851,9 +851,11 @@ export function CallStudioPage() {
           })}
         </div>
 
-        <span className={`text-[10px] font-mono font-medium ${textColor}`}>
-          {label}
-        </span>
+        {label ? (
+          <span className={`text-[10px] font-mono font-medium ${textColor}`}>
+            {label}
+          </span>
+        ) : null}
       </div>
     );
   };
