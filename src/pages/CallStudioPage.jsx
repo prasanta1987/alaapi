@@ -47,7 +47,8 @@ import {
   FlipHorizontal,
   Maximize2,
   Minimize2,
-  Scan
+  Scan,
+  Wifi
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -733,20 +734,29 @@ export function CallStudioPage() {
     });
   };
 
-  // Diagnostic Health Pill (VU Meter + Ping)
-  const renderDiagnosticPill = () => (
-    <div className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow">
-      {/* 4-bar mini VU meter */}
-      <div className="flex items-end gap-0.5 h-3 px-0.5" title={isMuted ? "Microphone Muted" : `Mic Pickup: ${micLevel}%`}>
+  // 1. Microphone VU Meter (Audio pickup level & mute status)
+  const renderMicVuMeter = () => (
+    <div
+      className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow"
+      title={isMuted ? "Microphone is Muted" : !hasLocalAudio ? "No Microphone Detected" : `Mic Pickup: ${micLevel}%`}
+    >
+      {isMuted || !hasLocalAudio ? (
+        <MicOff className="w-3 h-3 text-red-400 shrink-0" />
+      ) : (
+        <Mic className="w-3 h-3 text-purple-400 shrink-0" />
+      )}
+
+      {/* 4-bar mini Mic VU meter */}
+      <div className="flex items-end gap-0.5 h-3 px-0.5">
         {[1, 2, 3, 4].map(barIndex => {
           const threshold = barIndex * 22;
-          const active = !isMuted && micLevel >= threshold;
+          const active = !isMuted && hasLocalAudio && micLevel >= threshold;
           return (
             <span
               key={barIndex}
               style={{ height: `${barIndex * 2.5 + 2}px` }}
               className={`w-1 rounded-full transition-all duration-75 ${
-                isMuted
+                isMuted || !hasLocalAudio
                   ? 'bg-red-500/40'
                   : active
                   ? barIndex >= 4 ? 'bg-amber-400' : 'bg-emerald-400'
@@ -757,27 +767,96 @@ export function CallStudioPage() {
         })}
       </div>
 
-      {/* Connection Ping / Reconnecting Status */}
-      {isReconnecting ? (
-        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-400 animate-pulse">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-          Reconnecting...
-        </span>
-      ) : pingRtt !== null ? (
-        <span className="flex items-center gap-1 text-[10px] font-mono font-medium text-gray-300" title={`Round-Trip Time: ${pingRtt}ms`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${
-            pingRtt < 150 ? 'bg-emerald-400' : pingRtt < 350 ? 'bg-amber-400' : 'bg-red-400'
-          }`} />
-          {pingRtt}ms
-        </span>
-      ) : (
-        <span className="flex items-center gap-1 text-[10px] font-mono text-gray-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          48kHz
-        </span>
-      )}
+      <span className="text-[10px] font-mono font-medium text-gray-300">
+        {isMuted ? (
+          <span className="text-red-400 font-semibold">Muted</span>
+        ) : !hasLocalAudio ? (
+          <span className="text-gray-500">None</span>
+        ) : (
+          `${micLevel}%`
+        )}
+      </span>
     </div>
   );
+
+  // 2. Network VU Meter (WebRTC latency / ping signal strength)
+  const renderNetworkVuMeter = () => {
+    let activeBars = 0;
+    let barColor = 'bg-gray-700';
+    let textColor = 'text-gray-400';
+    let label = '48kHz';
+
+    if (!remoteConnected) {
+      activeBars = 1;
+      barColor = 'bg-gray-500';
+      textColor = 'text-gray-400';
+      label = 'Waiting';
+    } else if (isReconnecting) {
+      activeBars = 1;
+      barColor = 'bg-amber-400 animate-pulse';
+      textColor = 'text-amber-400 font-semibold';
+      label = 'Recon...';
+    } else if (pingRtt === null) {
+      activeBars = 4;
+      barColor = 'bg-emerald-400';
+      textColor = 'text-emerald-400';
+      label = '48kHz';
+    } else {
+      label = `${pingRtt}ms`;
+      if (pingRtt < 120) {
+        activeBars = 4;
+        barColor = 'bg-emerald-400';
+        textColor = 'text-emerald-300';
+      } else if (pingRtt < 220) {
+        activeBars = 3;
+        barColor = 'bg-emerald-400';
+        textColor = 'text-emerald-300';
+      } else if (pingRtt < 380) {
+        activeBars = 2;
+        barColor = 'bg-amber-400';
+        textColor = 'text-amber-400';
+      } else {
+        activeBars = 1;
+        barColor = 'bg-red-500';
+        textColor = 'text-red-400';
+      }
+    }
+
+    return (
+      <div
+        className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow"
+        title={
+          !remoteConnected
+            ? "Waiting for participant to connect"
+            : isReconnecting
+            ? "Network interruption... Reconnecting..."
+            : `Network Round-Trip Time (RTT): ${pingRtt !== null ? `${pingRtt}ms` : 'High-fidelity 48kHz audio active'}`
+        }
+      >
+        <Wifi className={`w-3 h-3 shrink-0 ${textColor}`} />
+
+        {/* 4-bar cellular / signal VU meter */}
+        <div className="flex items-end gap-0.5 h-3 px-0.5">
+          {[1, 2, 3, 4].map(barIndex => {
+            const isActive = barIndex <= activeBars;
+            return (
+              <span
+                key={barIndex}
+                style={{ height: `${barIndex * 2.5 + 2}px` }}
+                className={`w-1 rounded-full transition-all duration-150 ${
+                  isActive ? barColor : 'bg-gray-800'
+                }`}
+              />
+            );
+          })}
+        </div>
+
+        <span className={`text-[10px] font-mono font-medium ${textColor}`}>
+          {label}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
@@ -835,8 +914,9 @@ export function CallStudioPage() {
               <span>{formatDuration(callDuration)}</span>
             </div>
 
-            {/* Diagnostic Health Pill */}
-            {renderDiagnosticPill()}
+            {/* Dual VU Meters: Mic & Network */}
+            {renderMicVuMeter()}
+            {renderNetworkVuMeter()}
           </div>
 
           <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
@@ -866,14 +946,28 @@ export function CallStudioPage() {
               )}
               {hasLocalVideo ? 'Your Camera' : 'Camera (None)'}
             </span>
-            <span className={`flex items-center gap-1.5 text-[11px] font-normal lowercase ${
-              hasLocalVideo ? 'text-green-400' : 'text-gray-400'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                hasLocalVideo ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
-              }`} />
-              {hasLocalVideo ? 'live' : 'inactive'}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {/* Connected / Waiting Badge placed near the video feed */}
+              <span className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                remoteConnected
+                  ? 'bg-green-950/60 text-green-400 border-green-500/40'
+                  : 'bg-gray-800/80 text-gray-400 border-gray-700'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  remoteConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'
+                }`} />
+                {remoteConnected ? 'Connected' : 'Waiting...'}
+              </span>
+
+              <span className={`flex items-center gap-1.5 text-[11px] font-normal lowercase ${
+                hasLocalVideo ? 'text-green-400' : 'text-gray-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  hasLocalVideo ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
+                }`} />
+                {hasLocalVideo ? 'live' : 'inactive'}
+              </span>
+            </div>
           </div>
 
           <div id="localVideoContainer" className="pointer-events-auto relative bg-gray-950 rounded-xl overflow-hidden border border-gray-700/80 shadow-2xl shrink-0 self-end md:self-auto flex items-center justify-center min-h-[100px]">
@@ -942,23 +1036,18 @@ export function CallStudioPage() {
             </div>
           </div>
 
-          {/* Call Running Timer, Diagnostic Health & Connection Status */}
+          {/* Call Running Timer & Dual VU Meters: Mic & Network */}
           <div className="flex items-center justify-between pt-1 border-t border-gray-800 gap-2">
             <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-1 rounded-md border border-purple-500/30">
               <Clock className="w-3.5 h-3.5 text-purple-400" />
               <span>{formatDuration(callDuration)}</span>
             </div>
 
-            {/* Diagnostic Health Pill on Desktop Sidebar */}
-            {renderDiagnosticPill()}
-
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-              remoteConnected
-                ? 'bg-green-950/50 text-green-400 border-green-500/40'
-                : 'bg-gray-800 text-gray-400 border-gray-700'
-            }`}>
-              {remoteConnected ? '● Connected' : 'Waiting...'}
-            </span>
+            {/* Dual VU Meters: Mic VU & Network VU */}
+            <div className="flex items-center gap-1.5">
+              {renderMicVuMeter()}
+              {renderNetworkVuMeter()}
+            </div>
           </div>
 
           {/* Status Display */}
