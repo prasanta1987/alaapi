@@ -90,28 +90,15 @@ export function Navbar({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }
               </Link>
             )}
 
-            {/* Hardware Device & Audio Settings Trigger */}
+            {/* Studio, Hardware Devices & Audio Settings Trigger */}
             <button
               onClick={handleOpenSettings}
-              title="Quick Device Setup Modal"
+              title="Studio Hardware, DSP Filters & Ringtones Settings"
               className="px-2.5 py-1.5 rounded-lg text-gray-300 hover:text-purple-300 hover:bg-gray-800 transition-colors flex items-center gap-1.5 text-xs sm:text-sm"
             >
               <Settings2 className="w-3.5 h-3.5 text-purple-400" />
-              <span className="hidden sm:inline">Devices</span>
+              <span className="hidden sm:inline">Settings</span>
             </button>
-
-            {/* Dedicated Settings Page Link */}
-            <Link
-              to="/settings"
-              title="Full Studio, DSP & Hardware Settings"
-              className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs sm:text-sm ${
-                location.pathname === '/settings'
-                  ? 'bg-gray-800 text-purple-400 font-semibold'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-              }`}
-            >
-              <span>Settings</span>
-            </Link>
           </div>
         </div>
 
