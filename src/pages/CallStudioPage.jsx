@@ -104,6 +104,32 @@ export function CallStudioPage() {
   const unansweredTimeoutRef = useRef(null);
   const lastAppliedAnswerSdp = useRef(null);
   const lastAnsweredOfferSdp = useRef(null);
+  const volumePopoverRef = useRef(null);
+  const volumeBtnRef = useRef(null);
+
+  // Auto-dismiss volume popover on tap outside
+  useEffect(() => {
+    if (!showVolumePopover) return;
+
+    const handleOutsideTap = (e) => {
+      if (
+        volumePopoverRef.current &&
+        !volumePopoverRef.current.contains(e.target) &&
+        volumeBtnRef.current &&
+        !volumeBtnRef.current.contains(e.target)
+      ) {
+        setShowVolumePopover(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handleOutsideTap);
+    window.addEventListener('touchstart', handleOutsideTap);
+
+    return () => {
+      window.removeEventListener('pointerdown', handleOutsideTap);
+      window.removeEventListener('touchstart', handleOutsideTap);
+    };
+  }, [showVolumePopover]);
 
   // 1. Call Running Timer
   useEffect(() => {
@@ -146,9 +172,16 @@ export function CallStudioPage() {
     };
   }, []);
 
-  // 3. Local Mic VU Level Analyzer (0..100)
+  // 3. Local Mic VU Level Analyzer (0..100) - Sensitive Studio Vocal Dynamics
   useEffect(() => {
-    if (isMuted || !activeAudioStream || activeAudioStream.getAudioTracks().length === 0) {
+    const streamToAnalyze = activeAudioStream || localStream;
+    if (isMuted || !streamToAnalyze) {
+      setMicLevel(0);
+      return;
+    }
+
+    const audioTracks = streamToAnalyze.getAudioTracks();
+    if (audioTracks.length === 0 || !audioTracks[0].enabled) {
       setMicLevel(0);
       return;
     }
@@ -156,33 +189,48 @@ export function CallStudioPage() {
     let isCancelled = false;
     let micAudioCtx = null;
     let animFrame = null;
+    let currentMeterLevel = 0;
 
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) return;
 
       micAudioCtx = new AudioContextClass();
+
+      // Immediate attempt to resume
       if (micAudioCtx.state === 'suspended') {
         micAudioCtx.resume().catch(() => {});
       }
 
-      // Resume context on first user pointerdown/click if browser blocks autoplay
-      const unlockCtx = () => {
+      // Resume context on any user interaction (pointerdown, touchstart, click, keydown)
+      const resumeAudioCtx = () => {
         if (micAudioCtx && micAudioCtx.state === 'suspended') {
           micAudioCtx.resume().catch(() => {});
         }
       };
-      window.addEventListener('pointerdown', unlockCtx, { once: true });
-      window.addEventListener('keydown', unlockCtx, { once: true });
 
-      const source = micAudioCtx.createMediaStreamSource(activeAudioStream);
+      window.addEventListener('pointerdown', resumeAudioCtx);
+      window.addEventListener('touchstart', resumeAudioCtx);
+      window.addEventListener('click', resumeAudioCtx);
+      window.addEventListener('keydown', resumeAudioCtx);
+
+      // Create an audio-only stream containing just the microphone track
+      const audioStream = new MediaStream([audioTracks[0]]);
+      const source = micAudioCtx.createMediaStreamSource(audioStream);
+
       const analyser = micAudioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.4;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.25;
       source.connect(analyser);
 
-      const freqData = new Uint8Array(analyser.frequencyBinCount);
+      // Keep the audio graph processing in Chromium by connecting to a silent gain node
+      const silentGain = micAudioCtx.createGain();
+      silentGain.gain.value = 0;
+      analyser.connect(silentGain);
+      silentGain.connect(micAudioCtx.destination);
+
       const timeData = new Uint8Array(analyser.fftSize);
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
 
       const updateMeter = () => {
         if (isCancelled) return;
@@ -191,49 +239,78 @@ export function CallStudioPage() {
           micAudioCtx.resume().catch(() => {});
         }
 
-        // Measure frequency energy
-        analyser.getByteFrequencyData(freqData);
-        let freqSum = 0;
-        let peak = 0;
-        for (let i = 0; i < freqData.length; i++) {
-          freqSum += freqData[i];
-          if (freqData[i] > peak) peak = freqData[i];
-        }
-        const freqAvg = freqSum / freqData.length;
-
-        // Measure time-domain waveform
+        // 1. Time-domain RMS calculation
         analyser.getByteTimeDomainData(timeData);
-        let timeSquares = 0;
+        let sumSquares = 0;
+        let peakAmplitude = 0;
         for (let i = 0; i < timeData.length; i++) {
           const norm = (timeData[i] - 128) / 128;
-          timeSquares += norm * norm;
+          sumSquares += norm * norm;
+          const abs = Math.abs(norm);
+          if (abs > peakAmplitude) peakAmplitude = abs;
         }
-        const rms = Math.sqrt(timeSquares / timeData.length);
+        const rms = Math.sqrt(sumSquares / timeData.length);
 
-        // Responsive percentage (0..100)
-        const rmsPercent = Math.min(100, Math.round(rms * 220));
-        const freqPercent = Math.min(100, Math.round((freqAvg / 90) * 100));
-        const peakPercent = Math.min(100, Math.round((peak / 240) * 100));
+        // 2. Frequency-domain energy calculation in vocal presence band (100Hz - 3800Hz)
+        analyser.getByteFrequencyData(freqData);
+        let maxFreqVal = 0;
+        let speechBandSum = 0;
+        const maxBin = Math.min(freqData.length, 42);
+        for (let i = 1; i < maxBin; i++) {
+          speechBandSum += freqData[i];
+          if (freqData[i] > maxFreqVal) maxFreqVal = freqData[i];
+        }
+        const speechAvg = speechBandSum / Math.max(1, maxBin - 1);
 
-        const level = Math.max(rmsPercent, Math.round((freqPercent * 0.4) + (peakPercent * 0.6)));
-        setMicLevel(level);
+        // 3. Sensitive Vocal Studio dBFS Mapping
+        // With raw 48kHz audio (echoCancellation: false, autoGainControl: false),
+        // quiet whisper RMS is ~0.005, speech RMS is ~0.02..0.06, singing is ~0.08..0.35
+        let targetLevel = 0;
+        if (rms > 0.001 || speechAvg > 3) {
+          // Range: -50 dBFS (whisper) to 0 dBFS (peak) mapped to 0..100%
+          const db = 20 * Math.log10(Math.max(rms, 0.001));
+          const dbPercent = Math.max(0, Math.min(100, Math.round(((db + 50) / 50) * 100)));
+          const freqPercent = Math.max(0, Math.min(100, Math.round((speechAvg / 110) * 100)));
+          const peakPercent = Math.max(0, Math.min(100, Math.round(peakAmplitude * 110)));
+
+          targetLevel = Math.max(
+            dbPercent,
+            Math.round(freqPercent * 0.65 + peakPercent * 0.35)
+          );
+        }
+
+        // Smooth decay so meter animates smoothly like a professional VU needle
+        if (targetLevel >= currentMeterLevel) {
+          currentMeterLevel = targetLevel; // Instant attack
+        } else {
+          currentMeterLevel = Math.max(0, Math.round(currentMeterLevel * 0.84)); // Smooth decay
+        }
+
+        setMicLevel(currentMeterLevel);
 
         animFrame = requestAnimationFrame(updateMeter);
       };
 
       updateMeter();
+
+      return () => {
+        isCancelled = true;
+        if (animFrame) cancelAnimationFrame(animFrame);
+        window.removeEventListener('pointerdown', resumeAudioCtx);
+        window.removeEventListener('touchstart', resumeAudioCtx);
+        window.removeEventListener('click', resumeAudioCtx);
+        window.removeEventListener('keydown', resumeAudioCtx);
+        try {
+          source.disconnect();
+          analyser.disconnect();
+          silentGain.disconnect();
+          micAudioCtx.close();
+        } catch (e) {}
+        setMicLevel(0);
+      };
     } catch (e) {
       console.warn("Could not start local mic level analyzer:", e);
     }
-
-    return () => {
-      isCancelled = true;
-      if (animFrame) cancelAnimationFrame(animFrame);
-      if (micAudioCtx) {
-        try { micAudioCtx.close(); } catch (e) {}
-      }
-      setMicLevel(0);
-    };
   }, [activeAudioStream, isMuted]);
 
   // 4. Live WebRTC Stats Ping Polling (every 3s when connected)
@@ -830,7 +907,7 @@ export function CallStudioPage() {
       {/* 4-bar mini Mic VU meter */}
       <div className="flex items-end gap-0.5 h-3 px-0.5">
         {[1, 2, 3, 4].map(barIndex => {
-          const threshold = barIndex * 22;
+          const threshold = barIndex === 1 ? 6 : barIndex === 2 ? 25 : barIndex === 3 ? 55 : 80;
           const active = !isMuted && hasLocalAudio && micLevel >= threshold;
           return (
             <span
@@ -865,13 +942,13 @@ export function CallStudioPage() {
     let activeBars = 0;
     let barColor = 'bg-gray-700';
     let textColor = 'text-gray-400';
-    let label = '48kHz';
+    let label = '';
 
     if (!remoteConnected) {
       activeBars = 1;
       barColor = 'bg-gray-700';
       textColor = 'text-gray-500';
-      label = '';
+      label = ''; // No "Waiting" text shown here
     } else if (isReconnecting) {
       activeBars = 1;
       barColor = 'bg-amber-400 animate-pulse';
@@ -973,43 +1050,42 @@ export function CallStudioPage() {
               <Scan className="w-3.5 h-3.5 text-purple-400" />
               <span className="text-[10px] hidden sm:inline">{isRemoteZoomed ? "Fill / Zoom" : "Fit"}</span>
             </button>
+          </div>
+        )}
 
-            {/* Mobile & Desktop Monitor Volume Trigger */}
-            <div className="relative">
-              <button
-                onClick={() => setShowVolumePopover(prev => !prev)}
-                title="Incoming Monitor Volume"
-                className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
-              >
-                {remoteVolume === 0 ? (
-                  <VolumeX className="w-3.5 h-3.5 text-red-400" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5 text-purple-400" />
-                )}
-                <span className="text-[10px] font-mono">{remoteVolume}%</span>
-              </button>
-
-              {showVolumePopover && (
-                <div className="absolute bottom-full left-0 mb-2 p-3 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl flex items-center gap-2.5 z-30 min-w-[170px] animate-fadeIn">
-                  <button
-                    type="button"
-                    onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    {remoteVolume === 0 ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-purple-400" />}
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={remoteVolume}
-                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                    className="w-24 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                  />
-                  <span className="text-[10px] font-mono text-gray-300 w-6 text-right">{remoteVolume}%</span>
-                </div>
+        {/* Centered Floating Speaker Volume Popover on Mobile (Directly above media controls dock) */}
+        {showVolumePopover && remoteConnected && (
+          <div
+            ref={volumePopoverRef}
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-xl border border-purple-500/50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-fadeIn pointer-events-auto min-w-[260px] max-w-[90vw]"
+          >
+            <button
+              type="button"
+              onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
+              className="text-gray-300 hover:text-white p-1 rounded-lg transition-colors shrink-0"
+              title={remoteVolume === 0 ? "Unmute Speaker" : "Mute Speaker"}
+            >
+              {remoteVolume === 0 ? (
+                <VolumeX className="w-5 h-5 text-red-400" />
+              ) : (
+                <Volume2 className="w-5 h-5 text-purple-400" />
               )}
-            </div>
+            </button>
+            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">
+              Speaker
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={remoteVolume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              title={`Speaker volume: ${remoteVolume}%`}
+            />
+            <span className="text-xs font-mono text-purple-300 font-bold w-10 text-right shrink-0">
+              {remoteVolume}%
+            </span>
           </div>
         )}
 
@@ -1249,6 +1325,29 @@ export function CallStudioPage() {
               {isVideoOff || !hasLocalVideo ? <VideoOff className="w-5 h-5 shrink-0" /> : <Video className="w-5 h-5 shrink-0" />}
               <span className="text-xs font-semibold">{!hasLocalVideo ? "No Cam" : isVideoOff ? "Start Video" : "Stop Video"}</span>
             </button>
+
+            {/* Speaker / Monitor Volume Toggle Button (Mobile Overlay Dock) */}
+            {remoteConnected && (
+              <button
+                ref={volumeBtnRef}
+                onClick={() => setShowVolumePopover(prev => !prev)}
+                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 layout-overlay-volume-btn ${
+                  remoteVolume === 0
+                    ? 'bg-red-600 hover:bg-red-500 border-red-700'
+                    : showVolumePopover
+                    ? 'bg-purple-600 hover:bg-purple-500 border-purple-400'
+                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+                }`}
+                title={remoteVolume === 0 ? "Speaker Muted - Tap to unmute" : `Speaker Volume: ${remoteVolume}%`}
+              >
+                {remoteVolume === 0 ? (
+                  <VolumeX className="w-5 h-5 shrink-0 text-red-300" />
+                ) : (
+                  <Volume2 className="w-5 h-5 shrink-0 text-purple-300" />
+                )}
+                <span className="text-xs font-semibold">{remoteVolume === 0 ? "Muted" : `${remoteVolume}%`}</span>
+              </button>
+            )}
 
             {/* In-Call Camera Switch (Front/Back on Mobile, or cycle attached cameras on Desktop) */}
             <button

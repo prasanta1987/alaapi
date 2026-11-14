@@ -292,6 +292,10 @@ body.layout-sidepanel #mediaControls {
   gap: 0.625rem !important;
 }
 
+body.layout-sidepanel .layout-overlay-volume-btn {
+  display: none !important;
+}
+
 body.layout-sidepanel #mediaControls span {
   display: inline !important;
 }
