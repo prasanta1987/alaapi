@@ -213,10 +213,43 @@ export function getMusicConstraints(facingMode = currentFacingMode, preferredCam
   };
 }
 
-export async function setupLocalMedia(localVideoElement, speakerContainer = null) {
-  if (localStream) return localStream;
+export async function setupLocalMedia(localVideoElement, speakerContainer = null, audioOnly = false) {
+  if (localStream) {
+    if (audioOnly) {
+      // If a previous video stream was left active, shut down its video tracks completely
+      localStream.getVideoTracks().forEach(track => {
+        track.stop();
+        localStream.removeTrack(track);
+      });
+      isVideoStopped = true;
+      if (localVideoElement) {
+        localVideoElement.srcObject = null;
+      }
+      return localStream;
+    }
+    return localStream;
+  }
 
   let stream = null;
+
+  // 0. Audio-only call: acquire microphone ONLY, camera hardware remains completely off
+  if (audioOnly) {
+    isVideoStopped = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
+    } catch (err) {
+      console.warn("Could not acquire standalone audio track for audio call:", err.message);
+      stream = new MediaStream();
+    }
+    localStream = stream;
+    if (localVideoElement) {
+      localVideoElement.srcObject = null;
+    }
+    if (typeof HTMLMediaElement.prototype.setSinkId === 'undefined' && speakerContainer) {
+      speakerContainer.style.display = 'none';
+    }
+    return stream;
+  }
 
   // 1. Initial attempt: acquire both audio and video together
   try {

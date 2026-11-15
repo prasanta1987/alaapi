@@ -1,12 +1,13 @@
 {
-  "name": "Alaapi - Live Vocal & Music Studio",
+  "name": "Alaapi - Live Video & Music Studio",
   "short_name": "Alaapi",
-  "description": "High-fidelity real-time vocal class and music teaching studio.",
+  "description": "High-fidelity real-time video calling, vocal training, and live music teaching studio.",
   "start_url": "/",
   "scope": "/",
   "id": "/",
   "display": "standalone",
   "display_override": [
+    "window-controls-overlay",
     "standalone",
     "minimal-ui"
   ],
@@ -16,9 +17,10 @@
   "lang": "en",
   "dir": "ltr",
   "categories": [
+    "video",
+    "communication",
     "music",
-    "education",
-    "productivity"
+    "education"
   ],
   "icons": [
     {
@@ -48,9 +50,21 @@
   ],
   "shortcuts": [
     {
-      "name": "Dashboard",
+      "name": "Live Video Studio",
+      "short_name": "Video Studio",
+      "description": "Start an instant live video class",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Calling Dashboard",
       "short_name": "Dashboard",
-      "description": "Open Teacher/Student Calling Dashboard",
+      "description": "Open Teacher/Student Direct Calling Dashboard",
       "url": "/dashboard",
       "icons": [
         {
@@ -62,7 +76,7 @@
     {
       "name": "Audio & Video Settings",
       "short_name": "Settings",
-      "description": "Check hardware devices and DSP acoustic settings",
+      "description": "Configure microphone, camera, and acoustic DSP settings",
       "url": "/?settings=open",
       "icons": [
         {
@@ -71,6 +85,6 @@
         }
       ]
     }
-  ]
+  ],
+  "prefer_related_applications": false
 }
-

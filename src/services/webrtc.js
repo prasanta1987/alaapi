@@ -147,6 +147,7 @@ function setupDataChannel(channel, isCaller) {
 export function initPeerConnection({
   localStream,
   isCaller = false,
+  isAudioOnly = false,
   onRemoteStream,
   onIceCandidate,
   onConnectionStateChange,
@@ -175,17 +176,19 @@ export function initPeerConnection({
     }
   }
 
-  // 2. Video transceiver setup
-  const hasVideo = localStream && localStream.getVideoTracks().length > 0;
-  if (hasVideo) {
-    localStream.getVideoTracks().forEach(track => {
-      pc.addTrack(track, localStream);
-    });
-  } else {
-    try {
-      pc.addTransceiver('video', { direction: 'recvonly' });
-    } catch (e) {
-      console.warn("Could not add video recvonly transceiver:", e);
+  // 2. Video transceiver setup (omitted entirely for pure audio calls)
+  if (!isAudioOnly) {
+    const hasVideo = localStream && localStream.getVideoTracks().length > 0;
+    if (hasVideo) {
+      localStream.getVideoTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
+    } else {
+      try {
+        pc.addTransceiver('video', { direction: 'recvonly' });
+      } catch (e) {
+        console.warn("Could not add video recvonly transceiver:", e);
+      }
     }
   }
 

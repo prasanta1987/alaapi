@@ -52,7 +52,9 @@ import {
   Scan,
   Wifi,
   Volume2,
-  VolumeX
+  VolumeX,
+  Headphones,
+  Phone
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -61,6 +63,9 @@ export function CallStudioPage() {
   const isCaller = searchParams.get('isCaller') === 'true';
   const callId = searchParams.get('callId');
   const calleeName = searchParams.get('calleeName');
+  const urlCallType = searchParams.get('callType');
+  const [callType, setCallType] = useState(() => urlCallType || 'video');
+  const isAudioOnly = callType === 'audio';
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
@@ -70,12 +75,12 @@ export function CallStudioPage() {
   const [statusText, setStatusText] = useState('Initializing acoustic studio...');
   const [copiedRoomId, setCopiedRoomId] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(() => isAudioOnly);
   const [isLocalMirrored, setIsLocalMirrored] = useState(true);
   const [isRemoteMirrored, setIsRemoteMirrored] = useState(false);
   const [isRemoteZoomed, setIsRemoteZoomed] = useState(false);
   const [remoteConnected, setRemoteConnected] = useState(false);
-  const [hasLocalVideo, setHasLocalVideo] = useState(true);
+  const [hasLocalVideo, setHasLocalVideo] = useState(() => !isAudioOnly);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
   const [errorModalMsg, setErrorModalMsg] = useState(null);
 
@@ -432,7 +437,7 @@ export function CallStudioPage() {
 
     const startCall = async () => {
       try {
-        const stream = await setupLocalMedia(localVideoRef.current);
+        const stream = await setupLocalMedia(localVideoRef.current, null, isAudioOnly);
         if (isTerminated) {
           stopLocalMedia(localVideoRef.current);
           return;
@@ -441,11 +446,12 @@ export function CallStudioPage() {
 
         const vTracks = stream.getVideoTracks();
         const aTracks = stream.getAudioTracks();
-        setHasLocalVideo(vTracks.length > 0);
+        setHasLocalVideo(vTracks.length > 0 && !isAudioOnly);
         setHasLocalAudio(aTracks.length > 0);
+        setIsVideoOff(isAudioOnly || vTracks.length === 0);
 
-        // Enumerate video devices
-        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        // Enumerate video devices only if video is supported
+        if (!isAudioOnly && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoDevices = devices.filter(d => d.kind === 'videoinput');
           setCameras(videoDevices);
@@ -466,6 +472,7 @@ export function CallStudioPage() {
         initPeerConnection({
           localStream: stream,
           isCaller,
+          isAudioOnly,
           onRemoteStream: (remoteStream) => {
             if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
               remoteVideoRef.current.srcObject = remoteStream;
@@ -593,6 +600,7 @@ export function CallStudioPage() {
             calleeCandidates: [],
             callerMirrored: isLocalMirrored,
             calleeMirrored: false,
+            callType: isAudioOnly ? 'audio' : 'video',
             createdAt: new Date().toISOString(),
             status: 'active',
             host: currentUser ? {
@@ -618,6 +626,14 @@ export function CallStudioPage() {
 
             const data = snapshot.data();
             if (!data) return;
+
+            if (data.callType && data.callType !== callType) {
+              setCallType(data.callType);
+            }
+
+            if (data.callType && data.callType !== callType) {
+              setCallType(data.callType);
+            }
 
             if (typeof data.calleeMirrored === 'boolean') {
               setIsRemoteMirrored(data.calleeMirrored);
@@ -659,6 +675,10 @@ export function CallStudioPage() {
 
             const data = snapshot.data();
             if (!data) return;
+
+            if (data.callType && data.callType !== callType) {
+              setCallType(data.callType);
+            }
 
             // When host's offer is populated and differs from last answered offer
             if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc) {
@@ -1022,17 +1042,58 @@ export function CallStudioPage() {
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
       {/* 1. Main Remote Stage */}
       <div id="remoteStage" className="relative flex-1 min-h-0 w-full h-full bg-black rounded-none overflow-hidden flex items-center justify-center">
-        {/* Remote Video Stream (Mirrors automatically when peer mirrors their camera; Fit/Fill Zoom toggles dynamically) */}
+        {/* Remote Video Stream (Hidden when Audio Only, plays incoming audio) */}
         <video
           ref={remoteVideoRef}
           id="remoteVideo"
-          className={`w-full h-full ${isRemoteZoomed ? 'object-cover' : 'object-contain'} mx-auto transition-transform ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
+          className={isAudioOnly ? 'hidden' : `w-full h-full ${isRemoteZoomed ? 'object-cover' : 'object-contain'} mx-auto transition-transform ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
           autoPlay
           playsInline
         />
 
-        {/* Remote Video Actions: Mirror Toggle & Fit / Fill Zoom Toggle */}
-        {remoteConnected && (
+        {/* Dedicated Audio-Only Acoustic Stage UI */}
+        {isAudioOnly && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 z-10 select-none">
+            {/* Pulsing Concentric Audio Rings & Avatar */}
+            <div className="relative flex items-center justify-center mb-6">
+              {remoteConnected && (
+                <>
+                  <div className="absolute w-44 h-44 rounded-full bg-purple-600/10 border border-purple-500/20 animate-ping pointer-events-none" />
+                  <div className="absolute w-36 h-36 rounded-full bg-purple-500/15 border border-purple-500/30 animate-pulse pointer-events-none" />
+                </>
+              )}
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-purple-700 via-indigo-600 to-pink-500 p-1 shadow-2xl flex items-center justify-center z-10">
+                <div className="w-full h-full rounded-full bg-gray-950 flex flex-col items-center justify-center">
+                  <Headphones className="w-10 h-10 sm:w-12 sm:h-12 text-purple-400" />
+                </div>
+              </div>
+            </div>
+
+            {/* Remote Participant Name */}
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-1">
+              {calleeName || 'Audio Call'}
+            </h2>
+
+            {/* High-Fidelity Acoustic Status */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+                remoteConnected
+                  ? 'bg-purple-950/60 text-purple-300 border-purple-500/40'
+                  : 'bg-gray-800 text-gray-400 border-gray-700'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${remoteConnected ? 'bg-purple-400 animate-pulse' : 'bg-gray-500'}`} />
+                {remoteConnected ? 'Studio Audio Live (48kHz Lossless)' : 'Connecting Audio Stream...'}
+              </span>
+            </div>
+
+            <p className="text-xs text-gray-400 font-mono">
+              Pure acoustic mode &bull; Camera hardware disabled
+            </p>
+          </div>
+        )}
+
+        {/* Remote Video Actions: Mirror Toggle & Fit / Fill Zoom Toggle (Only shown for video calls) */}
+        {remoteConnected && !isAudioOnly && (
           <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
             <button
               onClick={() => setIsRemoteMirrored(prev => !prev)}
@@ -1190,13 +1251,19 @@ export function CallStudioPage() {
               </button>
             )}
 
-            {!hasLocalVideo && (
+            {isAudioOnly ? (
+              <div className="flex flex-col items-center justify-center p-3 text-center text-gray-400 w-full h-full min-h-[90px]">
+                <Headphones className="w-6 h-6 mb-1 text-purple-400" />
+                <span className="text-[10px] font-semibold text-gray-300">Voice Mode</span>
+                <span className="text-[8px] text-gray-500 font-mono">Camera Off</span>
+              </div>
+            ) : !hasLocalVideo ? (
               <div className="flex flex-col items-center justify-center p-4 text-center text-gray-500 w-full">
                 <VideoOff className="w-7 h-7 mb-1.5 text-purple-400/60" />
                 <span className="text-[11px] font-semibold text-gray-300">No Camera</span>
                 <span className="text-[9px] text-gray-500">Audio / View-Only Mode</span>
               </div>
-            )}
+            ) : null}
             <div className="absolute bottom-1 right-1 sm:bottom-1.5 sm:right-1.5 bg-black/75 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded backdrop-blur border border-white/10 flex items-center gap-1">
               <span>You</span>
               {!hasLocalAudio && (
@@ -1309,22 +1376,24 @@ export function CallStudioPage() {
               <span className="text-xs font-semibold">{!hasLocalAudio ? "No Mic" : isMuted ? "Unmute" : "Mute"}</span>
             </button>
 
-            {/* Video Toggle */}
-            <button
-              onClick={handleVideoToggle}
-              disabled={!hasLocalVideo}
-              className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
-                !hasLocalVideo
-                  ? 'bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed opacity-60'
-                  : isVideoOff
-                  ? 'bg-red-600 hover:bg-red-500 border-red-700'
-                  : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-              }`}
-              title={!hasLocalVideo ? "No camera attached" : isVideoOff ? "Start Video" : "Stop Video"}
-            >
-              {isVideoOff || !hasLocalVideo ? <VideoOff className="w-5 h-5 shrink-0" /> : <Video className="w-5 h-5 shrink-0" />}
-              <span className="text-xs font-semibold">{!hasLocalVideo ? "No Cam" : isVideoOff ? "Start Video" : "Stop Video"}</span>
-            </button>
+            {/* Video Toggle (Only for Video Calls) */}
+            {!isAudioOnly && (
+              <button
+                onClick={handleVideoToggle}
+                disabled={!hasLocalVideo}
+                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
+                  !hasLocalVideo
+                    ? 'bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed opacity-60'
+                    : isVideoOff
+                    ? 'bg-red-600 hover:bg-red-500 border-red-700'
+                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+                }`}
+                title={!hasLocalVideo ? "No camera attached" : isVideoOff ? "Start Video" : "Stop Video"}
+              >
+                {isVideoOff || !hasLocalVideo ? <VideoOff className="w-5 h-5 shrink-0" /> : <Video className="w-5 h-5 shrink-0" />}
+                <span className="text-xs font-semibold">{!hasLocalVideo ? "No Cam" : isVideoOff ? "Start Video" : "Stop Video"}</span>
+              </button>
+            )}
 
             {/* Speaker / Monitor Volume Toggle Button (Mobile Overlay Dock) */}
             {remoteConnected && (
@@ -1349,21 +1418,23 @@ export function CallStudioPage() {
               </button>
             )}
 
-            {/* In-Call Camera Switch (Front/Back on Mobile, or cycle attached cameras on Desktop) */}
-            <button
-              id="switchCameraBtn"
-              onClick={handleFlipCamera}
-              disabled={!hasLocalVideo}
-              className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
-                !hasLocalVideo
-                  ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-40'
-                  : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-              }`}
-              title={!hasLocalVideo ? "Camera not available" : "Switch / Flip Camera"}
-            >
-              <RefreshCw className="w-5 h-5 shrink-0" />
-              <span className="text-xs font-semibold">Switch Cam</span>
-            </button>
+            {/* In-Call Camera Switch (Only for Video Calls) */}
+            {!isAudioOnly && (
+              <button
+                id="switchCameraBtn"
+                onClick={handleFlipCamera}
+                disabled={!hasLocalVideo}
+                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
+                  !hasLocalVideo
+                    ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-40'
+                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+                }`}
+                title={!hasLocalVideo ? "Camera not available" : "Switch / Flip Camera"}
+              >
+                <RefreshCw className="w-5 h-5 shrink-0" />
+                <span className="text-xs font-semibold">Switch Cam</span>
+              </button>
+            )}
 
             {/* Leave Call */}
             <button
