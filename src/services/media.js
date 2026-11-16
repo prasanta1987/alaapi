@@ -101,16 +101,9 @@ export function buildAudioConstraints(deviceId = null) {
     constraints.channelCount = { ideal: 1 };
   } else {
     // Studio Master High-Fidelity Music Constraints:
-    // Pure 48kHz stereo, zero speech compression filters, ultra-low latency hardware buffers
+    // Pure 48kHz stereo, broadcast acoustic quality without overconstraining mobile drivers
     constraints.channelCount = { ideal: 2 };
     constraints.sampleRate = { ideal: 48000 };
-    constraints.sampleSize = { ideal: 16 };
-    constraints.latency = { ideal: 0.005 };
-    constraints.googAutoGainControl2 = false;
-    constraints.googNoiseSuppression2 = false;
-    constraints.googHighpassFilter = false;
-    constraints.googTypingNoiseDetection = false;
-    constraints.googAudioMirroring = false;
   }
 
   const preferred = getPreferredDevices();
@@ -214,9 +207,13 @@ export function getMusicConstraints(facingMode = currentFacingMode, preferredCam
 }
 
 export async function setupLocalMedia(localVideoElement, speakerContainer = null, audioOnly = false) {
+  // If localStream already exists, check if it matches the current session requirements
   if (localStream) {
+    const hasLiveAudio = localStream.getAudioTracks().some(t => t.readyState === 'live');
+    const hasLiveVideo = localStream.getVideoTracks().some(t => t.readyState === 'live');
+
     if (audioOnly) {
-      // If a previous video stream was left active, shut down its video tracks completely
+      // In audio-only mode, shut down any leftover video tracks
       localStream.getVideoTracks().forEach(track => {
         track.stop();
         localStream.removeTrack(track);
@@ -225,9 +222,30 @@ export async function setupLocalMedia(localVideoElement, speakerContainer = null
       if (localVideoElement) {
         localVideoElement.srcObject = null;
       }
-      return localStream;
+      if (hasLiveAudio) {
+        return localStream;
+      }
+    } else {
+      // In video mode, if we already have both live audio and live video, reuse it
+      if (hasLiveAudio && hasLiveVideo) {
+        isVideoStopped = false;
+        if (localVideoElement) {
+          localVideoElement.srcObject = localStream;
+          localVideoElement.play().catch(e => console.warn("Local video play prevented:", e));
+          updateLocalVideoAspectRatio(localVideoElement);
+          if (currentFacingMode === 'environment') {
+            localVideoElement.classList.remove('scale-x-[-1]');
+          } else {
+            localVideoElement.classList.add('scale-x-[-1]');
+          }
+        }
+        return localStream;
+      }
     }
-    return localStream;
+
+    // Otherwise, previous stream is stale or missing required tracks: stop it cleanly
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
   }
 
   let stream = null;
@@ -238,8 +256,12 @@ export async function setupLocalMedia(localVideoElement, speakerContainer = null
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
     } catch (err) {
-      console.warn("Could not acquire standalone audio track for audio call:", err.message);
-      stream = new MediaStream();
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err2) {
+        console.warn("Could not acquire standalone audio track for audio call:", err2.message);
+        stream = new MediaStream();
+      }
     }
     localStream = stream;
     if (localVideoElement) {
@@ -251,43 +273,37 @@ export async function setupLocalMedia(localVideoElement, speakerContainer = null
     return stream;
   }
 
-  // 1. Initial attempt: acquire both audio and video together
+  // 1. Video call: acquire both audio and video together with safe fallback
+  isVideoStopped = false;
   try {
     stream = await navigator.mediaDevices.getUserMedia(getMusicConstraints(currentFacingMode));
   } catch (initialErr) {
-    console.warn("Could not acquire both audio and video simultaneously:", initialErr.name, initialErr.message);
+    console.warn("Could not acquire audio + video simultaneously:", initialErr.name, initialErr.message);
 
-    // 2. Multi-stage hardware fallback
-    let hasAudioDev = false;
-    let hasVideoDev = false;
-
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        hasAudioDev = devices.some(d => d.kind === 'audioinput');
-        hasVideoDev = devices.some(d => d.kind === 'videoinput');
-      }
-    } catch (e) {
-      console.warn("Could not enumerate devices:", e);
-    }
-
-    // Attempt standalone audio
+    // Multi-stage hardware fallback: acquire audio and video separately
     let audioStream = null;
-    if (hasAudioDev || !hasVideoDev) {
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
+    } catch (e1) {
       try {
-        audioStream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
-      } catch (audioErr) {
-        console.warn("Could not acquire standalone audio track:", audioErr.message);
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e2) {
+        console.warn("Audio fallback failed:", e2.message);
       }
     }
 
-    // Attempt standalone video
     let videoStream = null;
-    if (hasVideoDev || !hasAudioDev) {
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({ video: getMusicConstraints(currentFacingMode).video });
+    } catch (e1) {
       try {
-        videoStream = await navigator.mediaDevices.getUserMedia({ video: getMusicConstraints(currentFacingMode).video });
-      } catch (videoErr) {
-        console.warn("Could not acquire standalone video track:", videoErr.message);
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
+      } catch (e2) {
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (e3) {
+          console.warn("Video fallback failed:", e3.message);
+        }
       }
     }
 

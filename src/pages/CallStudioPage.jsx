@@ -45,7 +45,6 @@ import {
   Copy,
   Check,
   Radio,
-  AlertCircle,
   Clock,
   FlipHorizontal,
   Maximize2,
@@ -86,18 +85,6 @@ export function CallStudioPage() {
     };
   }, [currentUser]);
 
-  const hadEndedNoticeRef = useRef(false);
-
-  // If a new call arrives while notice/error modal is open, immediately close it so calling modal displays
-  useEffect(() => {
-    if (incomingCall && errorModalMsg) {
-      hadEndedNoticeRef.current = true;
-      setErrorModalMsg(null);
-    } else if (!incomingCall && hadEndedNoticeRef.current && isLeavingRef.current) {
-      navigate('/');
-    }
-  }, [incomingCall, errorModalMsg, navigate]);
-
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
@@ -111,7 +98,6 @@ export function CallStudioPage() {
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [hasLocalVideo, setHasLocalVideo] = useState(() => !isAudioOnly);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
-  const [errorModalMsg, setErrorModalMsg] = useState(null);
 
   // Health Diagnostics: Mic Level & Ping
   const [micLevel, setMicLevel] = useState(0); // 0..100
@@ -453,11 +439,7 @@ export function CallStudioPage() {
         updateDoc(uRef, { inCall: false, isInCall: false }).catch(() => {});
       }
 
-      if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended") || message.includes("No answer"))) {
-        setErrorModalMsg(message);
-      } else {
-        navigate(currentUser ? '/dashboard' : '/', { replace: true });
-      }
+      navigate(currentUser ? '/dashboard' : '/', { replace: true });
     };
 
     // If caller initiated via direct call, listen for decline from student
@@ -1583,25 +1565,6 @@ export function CallStudioPage() {
           </nav>
         </div>
       </aside>
-
-      {/* Graceful Session Error Modal */}
-      {errorModalMsg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn select-none">
-          <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
-            <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center mx-auto mb-3 text-red-400">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-white mb-2">Class Session Notice</h3>
-            <p className="text-xs text-gray-300 mb-5 leading-relaxed">{errorModalMsg}</p>
-            <button
-              onClick={() => navigate(currentUser ? '/dashboard' : '/', { replace: true })}
-              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all"
-            >
-              Return to {currentUser ? 'Dashboard' : 'Lobby'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
