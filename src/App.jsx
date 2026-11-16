@@ -77,7 +77,7 @@ export function AppContent() {
       <IncomingCallModal />
       <OutgoingCallModal />
       <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-      <DeviceSetupModal initialTab="profile" isOpen={deviceSetupOpen} onClose={() => setDeviceSetupOpen(false)} />
+      <DeviceSetupModal initialTab="dsp" isOpen={deviceSetupOpen} onClose={() => setDeviceSetupOpen(false)} />
     </div>
   );
 }
