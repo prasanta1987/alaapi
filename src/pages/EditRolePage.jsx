@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth, isUserOnline, isUserBusy } from '../context/AuthContext';
+import { useAuth, isUserOnline } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import {
   db,
@@ -27,7 +27,6 @@ import {
   RefreshCw,
   Info,
   Phone,
-  PhoneCall,
   Video,
   Trash2
 } from 'lucide-react';
@@ -401,10 +400,8 @@ export function EditRolePage() {
                               size="sm"
                             />
                             <span
-                              className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${
-                                isUserBusy(user) ? 'bg-amber-400' : isUserOnline(user) ? 'bg-emerald-400' : 'bg-gray-500'
-                              }`}
-                              title={isUserBusy(user) ? "In Call (Busy)" : isUserOnline(user) ? "Online" : "Offline"}
+                              className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${isUserOnline(user) ? 'bg-emerald-400' : 'bg-gray-500'
+                                }`}
                             />
                           </div>
                           <div>
@@ -415,21 +412,14 @@ export function EditRolePage() {
                                   You
                                 </span>
                               )}
-                              {isUserBusy(user) ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded border font-medium bg-amber-950/70 text-amber-400 border-amber-600/40">
-                                  <PhoneCall className="w-2.5 h-2.5 text-amber-400 animate-pulse" />
-                                  Busy
-                                </span>
-                              ) : (
-                                <span
-                                  className={`text-[10px] px-1.5 py-0.2 rounded border font-medium ${isUserOnline(user)
-                                    ? 'bg-emerald-950/70 text-emerald-400 border-emerald-600/40'
-                                    : 'bg-gray-900 text-gray-500 border-gray-800'
-                                    }`}
-                                >
-                                  {isUserOnline(user) ? 'Online' : 'Offline'}
-                                </span>
-                              )}
+                              <span
+                                className={`text-[10px] px-1.5 py-0.2 rounded border font-medium ${isUserOnline(user)
+                                  ? 'bg-emerald-950/70 text-emerald-400 border-emerald-600/40'
+                                  : 'bg-gray-900 text-gray-500 border-gray-800'
+                                  }`}
+                              >
+                                {isUserOnline(user) ? 'Online' : 'Offline'}
+                              </span>
                             </div>
                             {user.phone && (
                               <div className="text-[11px] text-gray-400">

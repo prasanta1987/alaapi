@@ -206,23 +206,14 @@ export function initPeerConnection({
     };
   }
 
-  const remoteMediaStream = new MediaStream();
-
   pc.ontrack = event => {
-    if (event.streams && event.streams[0]) {
-      event.streams[0].getTracks().forEach(track => {
-        if (!remoteMediaStream.getTracks().some(t => t.id === track.id)) {
-          remoteMediaStream.addTrack(track);
-        }
-      });
-    } else if (event.track) {
-      if (!remoteMediaStream.getTracks().some(t => t.id === event.track.id)) {
-        remoteMediaStream.addTrack(event.track);
-      }
-    }
-
     if (onRemoteStream) {
-      onRemoteStream(remoteMediaStream);
+      if (event.streams && event.streams[0]) {
+        onRemoteStream(event.streams[0]);
+      } else if (event.track) {
+        const inboundStream = new MediaStream([event.track]);
+        onRemoteStream(inboundStream);
+      }
     }
   };
 

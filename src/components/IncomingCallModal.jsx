@@ -11,7 +11,7 @@ export function IncomingCallModal() {
   const isAudioCall = incomingCall.callType === 'audio';
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="bg-gray-900 border border-purple-500/50 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl relative overflow-hidden">
         {/* Pulsing ring aura */}
         <div className="absolute inset-0 bg-gradient-to-b from-purple-500/10 via-transparent to-transparent pointer-events-none" />

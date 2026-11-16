@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useCall } from '../context/CallContext';
 import {
   db,
   appId,
@@ -45,6 +44,7 @@ import {
   Copy,
   Check,
   Radio,
+  AlertCircle,
   Clock,
   FlipHorizontal,
   Maximize2,
@@ -67,23 +67,7 @@ export function CallStudioPage() {
   const [callType, setCallType] = useState(() => urlCallType || 'video');
   const isAudioOnly = callType === 'audio';
   const { currentUser } = useAuth();
-  const { incomingCall } = useCall();
   const navigate = useNavigate();
-
-  // Track presence: mark user as inCall in Firestore while on CallStudioPage
-  useEffect(() => {
-    if (currentUser?.uid) {
-      const uRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.uid);
-      updateDoc(uRef, { inCall: true, isInCall: true }).catch(() => {});
-    }
-
-    return () => {
-      if (currentUser?.uid) {
-        const uRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.uid);
-        updateDoc(uRef, { inCall: false, isInCall: false }).catch(() => {});
-      }
-    };
-  }, [currentUser]);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -98,6 +82,7 @@ export function CallStudioPage() {
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [hasLocalVideo, setHasLocalVideo] = useState(() => !isAudioOnly);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
+  const [errorModalMsg, setErrorModalMsg] = useState(null);
 
   // Health Diagnostics: Mic Level & Ping
   const [micLevel, setMicLevel] = useState(0); // 0..100
@@ -434,12 +419,11 @@ export function CallStudioPage() {
       stopLocalMedia(localVideoRef.current);
       releaseScreenWakeLock();
 
-      if (currentUser?.uid) {
-        const uRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.uid);
-        updateDoc(uRef, { inCall: false, isInCall: false }).catch(() => {});
+      if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended") || message.includes("No answer"))) {
+        setErrorModalMsg(message);
+      } else {
+        navigate(currentUser ? '/dashboard' : '/', { replace: true });
       }
-
-      navigate(currentUser ? '/dashboard' : '/', { replace: true });
     };
 
     // If caller initiated via direct call, listen for decline from student
@@ -493,15 +477,6 @@ export function CallStudioPage() {
           isCaller,
           isAudioOnly,
           onRemoteStream: (remoteStream) => {
-            setRemoteConnected(true);
-            setIsReconnecting(false);
-            setStatusText("Connected! High-fidelity audio active.");
-
-            if (unansweredTimeoutRef.current) {
-              clearTimeout(unansweredTimeoutRef.current);
-              unansweredTimeoutRef.current = null;
-            }
-
             if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
               remoteVideoRef.current.srcObject = remoteStream;
               remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
@@ -510,6 +485,15 @@ export function CallStudioPage() {
               const preferred = getPreferredDevices();
               if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
                 remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+              }
+
+              setRemoteConnected(true);
+              setIsReconnecting(false);
+              setStatusText("Connected! High-fidelity audio active.");
+
+              if (unansweredTimeoutRef.current) {
+                clearTimeout(unansweredTimeoutRef.current);
+                unansweredTimeoutRef.current = null;
               }
             }
           },
@@ -522,7 +506,6 @@ export function CallStudioPage() {
             console.log(`[WebRTC] Connection state: ${state}`);
 
             if (state === 'connected' || state === 'completed') {
-              setRemoteConnected(true);
               if (disconnectTimerRef.current) {
                 clearTimeout(disconnectTimerRef.current);
                 disconnectTimerRef.current = null;
@@ -1565,6 +1548,25 @@ export function CallStudioPage() {
           </nav>
         </div>
       </aside>
+
+      {/* Graceful Session Error Modal */}
+      {errorModalMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn select-none">
+          <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center mx-auto mb-3 text-red-400">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-2">Class Session Notice</h3>
+            <p className="text-xs text-gray-300 mb-5 leading-relaxed">{errorModalMsg}</p>
+            <button
+              onClick={() => navigate(currentUser ? '/dashboard' : '/', { replace: true })}
+              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+            >
+              Return to {currentUser ? 'Dashboard' : 'Lobby'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

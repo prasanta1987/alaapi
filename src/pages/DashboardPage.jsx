@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth, isUserOnline, isUserBusy } from '../context/AuthContext';
+import { useAuth, isUserOnline } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import {
   db,
@@ -31,7 +31,6 @@ import {
   Shield,
   ShieldCheck,
   Phone,
-  PhoneCall,
   Video,
   Trash2,
   Search,
@@ -558,7 +557,6 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {studentsList.map(student => {
                 const online = isUserOnline(student);
-                const busy = isUserBusy(student);
                 return (
                   <div
                     key={student.id}
@@ -572,10 +570,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                           size="md"
                         />
                         <span
-                          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${
-                            busy ? 'bg-amber-400' : online ? 'bg-emerald-400' : 'bg-gray-500'
-                          }`}
-                          title={busy ? "In Call (Busy)" : online ? "Online" : "Offline"}
+                          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${online ? 'bg-emerald-400' : 'bg-gray-500'
+                            }`}
                         />
                       </div>
 
@@ -584,29 +580,19 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                           <h4 className="text-sm font-bold text-white truncate group-hover:text-emerald-300 transition-colors">
                             {student.displayName || 'Student'}
                           </h4>
-                          {/* Real-time Online / Busy Indicator */}
-                          {busy ? (
+                          {/* Real-time Online Indicator */}
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                              : 'bg-gray-900 text-gray-400 border-gray-700'
+                              }`}
+                          >
                             <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 bg-amber-950/80 text-amber-300 border-amber-500/40"
-                              title="Student is currently in another call"
-                            >
-                              <PhoneCall className="w-2.5 h-2.5 text-amber-400 animate-pulse" />
-                              <span>Busy</span>
-                            </span>
-                          ) : (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
-                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                                : 'bg-gray-900 text-gray-400 border-gray-700'
+                              className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
                                 }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                                  }`}
-                              />
-                              {online ? 'Online' : 'Offline'}
-                            </span>
-                          )}
+                            />
+                            {online ? 'Online' : 'Offline'}
+                          </span>
                         </div>
 
                         {student.email && (
@@ -631,39 +617,23 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
 
                     {/* Teacher Direct Call Buttons: Video & Audio call options, ONLY IF ONLINE */}
                     {online ? (
-                      <div className="flex flex-col gap-1.5 mt-auto">
-                        {busy && (
-                          <p className="text-[10px] text-amber-400/90 font-medium flex items-center justify-center gap-1 text-center">
-                            <PhoneCall className="w-2.5 h-2.5 animate-pulse" />
-                            <span>In another call &bull; calling will notify</span>
-                          </p>
-                        )}
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => initiateDirectCall(student, 'video')}
-                            className={`py-2 px-2.5 rounded-xl active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all ${
-                              busy
-                                ? 'bg-purple-700 hover:bg-purple-600 shadow-purple-950/40'
-                                : 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/30'
-                            }`}
-                            title={busy ? "Call student (currently in another call)" : "Start Video Class"}
-                          >
-                            <Video className="w-3.5 h-3.5" />
-                            <span>Video Call</span>
-                          </button>
-                          <button
-                            onClick={() => initiateDirectCall(student, 'audio')}
-                            className={`py-2 px-2.5 rounded-xl active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all ${
-                              busy
-                                ? 'bg-emerald-700 hover:bg-emerald-600 shadow-emerald-950/40'
-                                : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/30'
-                            }`}
-                            title={busy ? "Call student (currently in another call)" : "Start Audio Class"}
-                          >
-                            <Phone className="w-3.5 h-3.5" />
-                            <span>Audio Call</span>
-                          </button>
-                        </div>
+                      <div className="grid grid-cols-2 gap-2 mt-auto">
+                        <button
+                          onClick={() => initiateDirectCall(student, 'video')}
+                          className="py-2 px-2.5 rounded-xl active:scale-95 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/30 transition-all"
+                          title="Start Video Class"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Video Call</span>
+                        </button>
+                        <button
+                          onClick={() => initiateDirectCall(student, 'audio')}
+                          className="py-2 px-2.5 rounded-xl active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all"
+                          title="Start Audio Class"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Audio Call</span>
+                        </button>
                       </div>
                     ) : (
                       <div className="mt-auto py-2 px-3 rounded-xl bg-gray-900/60 border border-gray-800 text-center text-xs text-gray-500 font-medium">
@@ -758,7 +728,6 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {teachersList.map(teacher => {
                   const online = isUserOnline(teacher);
-                  const busy = isUserBusy(teacher);
                   return (
                     <div key={teacher.id} className="bg-gray-800/40 border border-gray-700/60 p-3.5 rounded-2xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
@@ -769,10 +738,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                             size="sm"
                           />
                           <span
-                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${
-                              busy ? 'bg-amber-400' : online ? 'bg-emerald-400' : 'bg-gray-500'
-                            }`}
-                            title={busy ? "In Call (Busy)" : online ? "Online" : "Offline"}
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${online ? 'bg-emerald-400' : 'bg-gray-500'
+                              }`}
                           />
                         </div>
                         <div className="min-w-0">
@@ -781,25 +748,18 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                         </div>
                       </div>
 
-                      {busy ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 bg-amber-950/80 text-amber-300 border-amber-500/40" title="Teacher is currently on another call">
-                          <PhoneCall className="w-2.5 h-2.5 text-amber-400 animate-pulse" />
-                          <span>Busy</span>
-                        </span>
-                      ) : (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
+                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                          : 'bg-gray-900 text-gray-400 border-gray-700'
+                          }`}
+                      >
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
-                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                            : 'bg-gray-900 text-gray-400 border-gray-700'
+                          className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
                             }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                              }`}
-                          />
-                          {online ? 'Online' : 'Offline'}
-                        </span>
-                      )}
+                        />
+                        {online ? 'Online' : 'Offline'}
+                      </span>
                     </div>
                   );
                 })}
@@ -845,46 +805,31 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                 <tbody className="divide-y divide-gray-800/60 bg-gray-900/50">
                   {allUsers.map(user => {
                     const online = isUserOnline(user);
-                    const busy = isUserBusy(user);
                     return (
                       <tr key={user.id} className="hover:bg-gray-800/40 transition-colors">
                         <td className="p-3.5 flex items-center gap-2.5">
-                          <div className="relative shrink-0">
-                            <UserAvatar
-                              photoURL={user.photoURL}
-                              name={user.displayName}
-                              size="xs"
-                            />
-                            <span
-                              className={`absolute bottom-0 right-0 w-2 h-2 rounded-full border border-gray-900 ${
-                                busy ? 'bg-amber-400' : online ? 'bg-emerald-400' : 'bg-gray-500'
-                              }`}
-                            />
-                          </div>
+                          <UserAvatar
+                            photoURL={user.photoURL}
+                            name={user.displayName}
+                            size="xs"
+                          />
                           <span className="font-semibold text-gray-200">
                             {user.displayName || 'Vocalist'}
                           </span>
                         </td>
                         <td className="p-3.5">
-                          {busy ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-amber-950/80 text-amber-300 border-amber-500/40">
-                              <PhoneCall className="w-2.5 h-2.5 text-amber-400 animate-pulse" />
-                              <span>Busy</span>
-                            </span>
-                          ) : (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${online
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                              : 'bg-gray-900 text-gray-400 border-gray-700'
+                              }`}
+                          >
                             <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${online
-                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                                : 'bg-gray-900 text-gray-400 border-gray-700'
+                              className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
                                 }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                                  }`}
-                              />
-                              {online ? 'Online' : 'Offline'}
-                            </span>
-                          )}
+                            />
+                            {online ? 'Online' : 'Offline'}
+                          </span>
                         </td>
                         {/* <td className="p-3.5 text-gray-400 font-mono text-[11px]">{user.email || 'N/A'}</td> */}
                         <td className="p-3.5">
