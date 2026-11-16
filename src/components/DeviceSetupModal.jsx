@@ -18,18 +18,28 @@ import {
   Settings2
 } from 'lucide-react';
 
-export function DeviceSetupModal({ isOpen, onClose, initialTab = 'devices' }) {
-  const [activeTab, setActiveTab] = useState(initialTab);
+export function DeviceSetupModal({ isOpen, onClose, initialTab }) {
   const { currentUser } = useAuth();
 
-  // Reset tab when modal opens
+  // Resolve default tab: if user is logged in -> 'profile', if not logged in -> 'dsp'
+  const getDefaultTab = () => {
+    if (initialTab) {
+      if (initialTab === 'profile' && !currentUser) return 'dsp';
+      return initialTab;
+    }
+    return currentUser ? 'profile' : 'dsp';
+  };
+
+  const [activeTab, setActiveTab] = useState(getDefaultTab);
+
+  // Reset tab when modal opens or auth state changes
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      setActiveTab(getDefaultTab());
     } else {
       stopRingtone();
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, currentUser]);
 
   // Clean up any test ringtone if tab changes away from ringtones
   const handleTabChange = (tab) => {
@@ -47,17 +57,22 @@ export function DeviceSetupModal({ isOpen, onClose, initialTab = 'devices' }) {
   if (!isOpen) return null;
 
   const tabs = [
+
+    ...(currentUser
+      ? [
+        {
+          id: 'profile',
+          label: 'Profile & Music',
+          shortLabel: 'Profile',
+          icon: User
+        }
+      ]
+      : []),
     {
       id: 'dsp',
       label: 'Audio & DSP Filters',
       shortLabel: 'Audio DSP',
       icon: Sliders
-    },
-    {
-      id: 'devices',
-      label: 'Hardware Devices',
-      shortLabel: 'Devices',
-      icon: Camera
     },
     {
       id: 'ringtones',
@@ -66,21 +81,17 @@ export function DeviceSetupModal({ isOpen, onClose, initialTab = 'devices' }) {
       icon: Bell
     },
     {
+      id: 'devices',
+      label: 'Hardware Devices',
+      shortLabel: 'Devices',
+      icon: Camera
+    },
+    {
       id: 'testcall',
       label: 'Test Call (Echo)',
       shortLabel: 'Echo Test',
       icon: PhoneCall
-    },
-    ...(currentUser
-      ? [
-          {
-            id: 'profile',
-            label: 'Profile & Music',
-            shortLabel: 'Profile',
-            icon: User
-          }
-        ]
-      : [])
+    }
   ];
 
   return (
@@ -122,11 +133,10 @@ export function DeviceSetupModal({ isOpen, onClose, initialTab = 'devices' }) {
                 type="button"
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
-                className={`px-3 py-2 text-xs font-semibold rounded-t-xl transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-                  isActive
-                    ? 'text-purple-300 border-purple-500 bg-gray-800/60 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-200 border-transparent hover:bg-gray-800/30'
-                }`}
+                className={`px-3 py-2 text-xs font-semibold rounded-t-xl transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${isActive
+                  ? 'text-purple-300 border-purple-500 bg-gray-800/60 shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200 border-transparent hover:bg-gray-800/30'
+                  }`}
               >
                 <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-purple-400' : 'text-gray-500'}`} />
                 <span className="hidden sm:inline">{tab.label}</span>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { CallProvider } from './context/CallContext';
 import { Navbar } from './components/Navbar';
 import { LobbyPage } from './pages/LobbyPage';
@@ -13,20 +13,44 @@ import { ProfileModal } from './components/ProfileModal';
 import { DeviceSetupModal } from './components/DeviceSetupModal';
 
 export function AppContent() {
+  const { currentUser } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const [deviceSetupOpen, setDeviceSetupOpen] = useState(false);
+  const [deviceSetupTab, setDeviceSetupTab] = useState(null);
   const location = useLocation();
 
   // Hide the Navbar when inside an active WebRTC call room
   const isInCall = location.pathname.startsWith('/room/');
 
+  const handleOpenSettings = (tab = null) => {
+    setDeviceSetupTab(tab);
+    setDeviceSetupOpen(true);
+  };
+
+  const handleOpenProfile = () => {
+    if (currentUser) {
+      setDeviceSetupTab('profile');
+      setDeviceSetupOpen(true);
+    } else {
+      setProfileOpen(true);
+    }
+  };
+
+  // Support ?settings=open query parameter
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('settings') === 'open') {
+      setDeviceSetupOpen(true);
+    }
+  }, [location.search]);
+
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 overflow-hidden select-none">
       {!isInCall && (
         <Navbar
-          onOpenProfile={() => setProfileOpen(true)}
-          onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
-          onOpenAudioSettings={() => setDeviceSetupOpen(true)}
+          onOpenProfile={handleOpenProfile}
+          onOpenDeviceSetup={() => handleOpenSettings()}
+          onOpenAudioSettings={() => handleOpenSettings()}
         />
       )}
 
@@ -43,8 +67,8 @@ export function AppContent() {
               path="/"
               element={
                 <LobbyPage
-                  onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
-                  onOpenAudioSettings={() => setDeviceSetupOpen(true)}
+                  onOpenDeviceSetup={() => handleOpenSettings()}
+                  onOpenAudioSettings={() => handleOpenSettings()}
                 />
               }
             />
@@ -52,9 +76,9 @@ export function AppContent() {
               path="/dashboard"
               element={
                 <DashboardPage
-                  onOpenProfile={() => setProfileOpen(true)}
-                  onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
-                  onOpenAudioSettings={() => setDeviceSetupOpen(true)}
+                  onOpenProfile={handleOpenProfile}
+                  onOpenDeviceSetup={() => handleOpenSettings()}
+                  onOpenAudioSettings={() => handleOpenSettings()}
                 />
               }
             />
@@ -64,8 +88,8 @@ export function AppContent() {
               path="*"
               element={
                 <LobbyPage
-                  onOpenDeviceSetup={() => setDeviceSetupOpen(true)}
-                  onOpenAudioSettings={() => setDeviceSetupOpen(true)}
+                  onOpenDeviceSetup={() => handleOpenSettings()}
+                  onOpenAudioSettings={() => handleOpenSettings()}
                 />
               }
             />
@@ -77,7 +101,14 @@ export function AppContent() {
       <IncomingCallModal />
       <OutgoingCallModal />
       <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-      <DeviceSetupModal initialTab="dsp" isOpen={deviceSetupOpen} onClose={() => setDeviceSetupOpen(false)} />
+      <DeviceSetupModal
+        initialTab={deviceSetupTab}
+        isOpen={deviceSetupOpen}
+        onClose={() => {
+          setDeviceSetupOpen(false);
+          setDeviceSetupTab(null);
+        }}
+      />
     </div>
   );
 }
