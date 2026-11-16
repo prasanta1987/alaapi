@@ -292,7 +292,18 @@ body.layout-sidepanel #mediaControls {
   gap: 0.625rem !important;
 }
 
-body.layout-sidepanel .layout-overlay-volume-btn {
+.layout-overlay-volume-btn,
+body.layout-sidepanel .layout-overlay-volume-btn,
+body.layout-sidepanel #mediaControls button.layout-overlay-volume-btn,
+body:not(.layout-overlay) #mediaControls button.layout-overlay-volume-btn {
+  display: none !important;
+}
+
+body.layout-overlay #mediaControls button.layout-overlay-volume-btn {
+  display: flex !important;
+}
+
+body.layout-sidepanel [data-volume-popover] {
   display: none !important;
 }
 

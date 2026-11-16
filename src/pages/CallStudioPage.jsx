@@ -1163,6 +1163,7 @@ export function CallStudioPage() {
         {showVolumePopover && remoteConnected && (
           <div
             ref={volumePopoverRef}
+            data-volume-popover="true"
             className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-xl border border-purple-500/50 py-3.5 px-2.5 rounded-2xl shadow-2xl flex flex-col items-center gap-2.5 animate-fadeIn pointer-events-auto w-14 select-none touch-none"
           >
             {/* Percentage Display at Top */}
@@ -1253,17 +1254,20 @@ export function CallStudioPage() {
             {renderNetworkVuMeter()}
           </div>
 
-          <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
-            <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
-            <span className="text-sm font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
-            <button
-              onClick={copyRoomId}
-              title="Copy Room ID"
-              className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
-            >
-              {copiedRoomId ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          </div>
+          {/* Room ID Badge: Only shown before call is connected so user can copy & share it */}
+          {!remoteConnected && (
+            <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
+              <span className="text-sm font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
+              <button
+                onClick={copyRoomId}
+                title="Copy Room ID"
+                className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
+              >
+                {copiedRoomId ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1352,41 +1356,52 @@ export function CallStudioPage() {
 
         {/* Middle: Session Info (Clean Desktop Card with Room ID, Call Duration & Health) */}
         <div className="sidebar-info-card flex-col gap-2.5 p-3.5 bg-gray-950/70 rounded-xl border border-gray-800 text-xs">
-          {/* Room ID Row */}
-          <div className="flex items-center justify-between bg-gray-900/90 px-3 py-2 rounded-lg border border-purple-500/30">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Room ID</span>
-              <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
+          {/* Room ID Row: Only shown before call is connected so user can copy & share it */}
+          {!remoteConnected && (
+            <div className="flex items-center justify-between bg-gray-900/90 px-3 py-2 rounded-lg border border-purple-500/30">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Room ID</span>
+                <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={copyRoomId}
+                  title="Copy Room ID"
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+                >
+                  {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={handleToggleFullscreen}
+                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+                >
+                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={copyRoomId}
-                title="Copy Room ID"
-                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-              >
-                {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={handleToggleFullscreen}
-                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* Call Running Timer & Dual VU Meters: Mic & Network */}
-          <div className="flex items-center justify-between pt-1 border-t border-gray-800 gap-2">
+          <div className={`flex items-center justify-between gap-2 ${!remoteConnected ? 'pt-1 border-t border-gray-800' : ''}`}>
             <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-1 rounded-md border border-purple-500/30">
               <Clock className="w-3.5 h-3.5 text-purple-400" />
               <span>{formatDuration(callDuration)}</span>
             </div>
 
-            {/* Dual VU Meters: Mic VU & Network VU */}
+            {/* Dual VU Meters: Mic VU & Network VU (+ Fullscreen button when connected) */}
             <div className="flex items-center gap-1.5">
               {renderMicVuMeter()}
               {renderNetworkVuMeter()}
+              {remoteConnected && (
+                <button
+                  onClick={handleToggleFullscreen}
+                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors ml-0.5"
+                >
+                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1472,12 +1487,12 @@ export function CallStudioPage() {
               </button>
             )}
 
-            {/* Speaker / Monitor Volume Toggle Button (Mobile Overlay Dock) */}
+            {/* Speaker / Monitor Volume Toggle Button (Mobile Overlay Dock only - hidden in sidebar view) */}
             {remoteConnected && (
               <button
                 ref={volumeBtnRef}
                 onClick={() => setShowVolumePopover(prev => !prev)}
-                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 layout-overlay-volume-btn ${
+                className={`text-white shadow border transition-colors items-center justify-center gap-2 layout-overlay-volume-btn ${
                   remoteVolume === 0
                     ? 'bg-red-600 hover:bg-red-500 border-red-700'
                     : showVolumePopover
