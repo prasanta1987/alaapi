@@ -1091,7 +1091,9 @@ export function CallStudioPage() {
         <video
           ref={remoteVideoRef}
           id="remoteVideo"
-          className={isAudioOnly ? 'hidden' : `w-full h-full ${isRemoteZoomed ? 'object-cover' : 'object-contain'} mx-auto transition-transform ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
+          data-fit={isRemoteZoomed ? "cover" : "contain"}
+          style={{ objectFit: isRemoteZoomed ? 'cover' : 'contain' }}
+          className={isAudioOnly ? 'hidden' : `w-full h-full ${isRemoteZoomed ? 'object-cover' : 'object-contain'} mx-auto transition-all ${isRemoteMirrored ? 'scale-x-[-1]' : ''}`}
           autoPlay
           playsInline
         />
@@ -1137,32 +1139,48 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Remote Video Actions: Mirror Toggle, Fit / Fill Zoom Toggle & Fullscreen (Only shown for video calls) */}
+        {/* Remote Video Actions: Vertical Icon-Only Dock (Mirror, Fit/Zoom, Fullscreen) */}
         {remoteConnected && !isAudioOnly && (
-          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+          <div className={`absolute bottom-3 left-3 z-20 flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 ${
+            isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
+          }`}>
+            {/* Mirror Toggle */}
             <button
               onClick={() => setIsRemoteMirrored(prev => !prev)}
-              title={isRemoteMirrored ? "Switch Remote Video to Normal" : "Mirror Remote Video Feed"}
-              className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+              title={isRemoteMirrored ? "Disable Remote Mirror (Normal)" : "Mirror Remote Video Feed"}
+              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${
+                isRemoteMirrored
+                  ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
+                  : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
+              }`}
             >
-              <FlipHorizontal className="w-3.5 h-3.5 text-purple-400" />
-              <span className="text-[10px] hidden sm:inline">{isRemoteMirrored ? "Remote Mirrored" : "Mirror Remote"}</span>
+              <FlipHorizontal className="w-4 h-4" />
             </button>
+
+            {/* Fit / Fill (Zoom) Toggle */}
             <button
               onClick={() => setIsRemoteZoomed(prev => !prev)}
-              title={isRemoteZoomed ? "Switch to Fit (Contain)" : "Switch to Fill / Zoom (Cover)"}
-              className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+              title={isRemoteZoomed ? "Switch to Fit (Show entire video frame)" : "Switch to Fill / Zoom (Cover screen)"}
+              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${
+                isRemoteZoomed
+                  ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
+                  : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
+              }`}
             >
-              <Scan className="w-3.5 h-3.5 text-purple-400" />
-              <span className="text-[10px] hidden sm:inline">{isRemoteZoomed ? "Fill / Zoom" : "Fit"}</span>
+              <Scan className="w-4 h-4" />
             </button>
+
+            {/* Fullscreen Toggle */}
             <button
               onClick={handleToggleFullscreen}
-              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Stage"}
-              className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${
+                isFullscreen
+                  ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
+                  : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
+              }`}
             >
-              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-purple-400" /> : <Maximize2 className="w-3.5 h-3.5 text-purple-400" />}
-              <span className="text-[10px] hidden sm:inline">{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
           </div>
         )}
