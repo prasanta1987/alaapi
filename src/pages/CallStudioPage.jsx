@@ -111,12 +111,15 @@ export function CallStudioPage() {
   const lastAnsweredOfferSdp = useRef(null);
   const volumePopoverRef = useRef(null);
   const volumeBtnRef = useRef(null);
+  const sliderTrackRef = useRef(null);
+  const isDraggingVolumeRef = useRef(false);
 
   // Auto-dismiss volume popover on tap outside
   useEffect(() => {
     if (!showVolumePopover) return;
 
     const handleOutsideTap = (e) => {
+      if (isDraggingVolumeRef.current) return;
       if (
         volumePopoverRef.current &&
         !volumePopoverRef.current.contains(e.target) &&
@@ -889,6 +892,48 @@ export function CallStudioPage() {
     }
   };
 
+  // Vertical slider touch/pointer drag handlers (moving up increases volume, moving down decreases)
+  const updateVolumeFromPointer = (clientY) => {
+    if (!sliderTrackRef.current) return;
+    const rect = sliderTrackRef.current.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    const relativeY = clientY - rect.top;
+    const ratio = 1 - Math.max(0, Math.min(1, relativeY / rect.height));
+    handleVolumeChange(Math.round(ratio * 100));
+  };
+
+  const handleSliderPointerDown = (e) => {
+    if (e.cancelable) e.preventDefault();
+    e.stopPropagation();
+    isDraggingVolumeRef.current = true;
+    const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    updateVolumeFromPointer(clientY);
+
+    const onMove = (moveEvent) => {
+      if (!isDraggingVolumeRef.current) return;
+      if (moveEvent.cancelable) moveEvent.preventDefault();
+      const currentY = moveEvent.clientY ?? (moveEvent.touches && moveEvent.touches[0] ? moveEvent.touches[0].clientY : 0);
+      updateVolumeFromPointer(currentY);
+    };
+
+    const onEnd = () => {
+      isDraggingVolumeRef.current = false;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchcancel', onEnd);
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+  };
+
   // Toggle local mirror mode
   const handleToggleLocalMirror = () => {
     setIsLocalMirrored(prev => {
@@ -1114,39 +1159,71 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Centered Floating Speaker Volume Popover on Mobile (Directly above media controls dock) */}
+        {/* Sleek Vertical Floating Speaker Volume Popover on Mobile (Cannot move out of screen) */}
         {showVolumePopover && remoteConnected && (
           <div
             ref={volumePopoverRef}
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-xl border border-purple-500/50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-fadeIn pointer-events-auto min-w-[260px] max-w-[90vw]"
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-xl border border-purple-500/50 py-3.5 px-2.5 rounded-2xl shadow-2xl flex flex-col items-center gap-2.5 animate-fadeIn pointer-events-auto w-14 select-none touch-none"
           >
+            {/* Percentage Display at Top */}
+            <span className="text-[11px] font-mono font-bold text-purple-300">
+              {remoteVolume}%
+            </span>
+
+            {/* Vertical Slider Track Container */}
+            <div
+              ref={sliderTrackRef}
+              onPointerDown={handleSliderPointerDown}
+              onTouchStart={handleSliderPointerDown}
+              className="relative w-6 h-32 bg-gray-800/90 rounded-full cursor-pointer shadow-inner border border-gray-700/60 flex flex-col justify-end p-0.5 overflow-hidden select-none touch-none"
+              title={`Drag up/down to adjust speaker volume: ${remoteVolume}%`}
+            >
+              {/* Level Fill Indicator (Grows from bottom to top) */}
+              <div
+                style={{ height: `${remoteVolume}%` }}
+                className={`w-full transition-all duration-75 rounded-full ${
+                  remoteVolume === 0
+                    ? 'bg-red-500/60'
+                    : 'bg-gradient-to-t from-purple-600 via-indigo-500 to-purple-400'
+                }`}
+              />
+
+              {/* Glowing Thumb Dot */}
+              <div
+                style={{ bottom: `calc(${Math.min(94, Math.max(6, remoteVolume))}% - 6px)` }}
+                className="absolute left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-md border border-purple-400 pointer-events-none transition-all duration-75"
+              />
+
+              {/* Accessible Native Range Input for Keyboard Nav / Screen Readers */}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={remoteVolume}
+                onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                style={{
+                  writingMode: 'vertical-lr',
+                  WebkitAppearance: 'slider-vertical',
+                  direction: 'rtl'
+                }}
+                className="sr-only"
+                aria-label="Speaker Volume"
+              />
+            </div>
+
+            {/* Mute / Unmute Button at Bottom */}
             <button
               type="button"
               onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
-              className="text-gray-300 hover:text-white p-1 rounded-lg transition-colors shrink-0"
+              className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
               title={remoteVolume === 0 ? "Unmute Speaker" : "Mute Speaker"}
             >
               {remoteVolume === 0 ? (
-                <VolumeX className="w-5 h-5 text-red-400" />
+                <VolumeX className="w-4 h-4 text-red-400" />
               ) : (
-                <Volume2 className="w-5 h-5 text-purple-400" />
+                <Volume2 className="w-4 h-4 text-purple-400" />
               )}
             </button>
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">
-              Speaker
-            </span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={remoteVolume}
-              onChange={(e) => handleVolumeChange(Number(e.target.value))}
-              className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-              title={`Speaker volume: ${remoteVolume}%`}
-            />
-            <span className="text-xs font-mono text-purple-300 font-bold w-10 text-right shrink-0">
-              {remoteVolume}%
-            </span>
           </div>
         )}
 
