@@ -48,16 +48,16 @@ export function DeviceSetupModal({ isOpen, onClose, initialTab = 'devices' }) {
 
   const tabs = [
     {
-      id: 'devices',
-      label: 'Hardware Devices',
-      shortLabel: 'Devices',
-      icon: Camera
-    },
-    {
       id: 'dsp',
       label: 'Audio & DSP Filters',
       shortLabel: 'Audio DSP',
       icon: Sliders
+    },
+    {
+      id: 'devices',
+      label: 'Hardware Devices',
+      shortLabel: 'Devices',
+      icon: Camera
     },
     {
       id: 'ringtones',
