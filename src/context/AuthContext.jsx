@@ -32,6 +32,18 @@ export function isUserOnline(user) {
   return false;
 }
 
+export function isUserBusy(user) {
+  if (!user) return false;
+  if (!isUserOnline(user)) return false;
+  return Boolean(user.inCall || user.isInCall);
+}
+
+export function getUserStatus(user) {
+  if (!isUserOnline(user)) return 'offline';
+  if (isUserBusy(user)) return 'busy';
+  return 'online';
+}
+
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -46,8 +58,10 @@ export function AuthProvider({ children }) {
       if (!uid) return;
       try {
         const uRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', uid);
+        const inCall = typeof window !== 'undefined' && window.location.pathname.startsWith('/room/');
         await updateDoc(uRef, {
           isOnline: true,
+          inCall: inCall,
           lastHeartbeat: Date.now(),
           lastSeen: new Date().toISOString()
         });
@@ -67,6 +81,7 @@ export function AuthProvider({ children }) {
         const uRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentAuthUid);
         updateDoc(uRef, {
           isOnline: false,
+          inCall: false,
           lastSeen: new Date().toISOString()
         }).catch(() => {});
       }
@@ -170,6 +185,7 @@ export function AuthProvider({ children }) {
         const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.uid);
         await updateDoc(userRef, {
           isOnline: false,
+          inCall: false,
           lastSeen: new Date().toISOString()
         });
       } catch (e) {}
