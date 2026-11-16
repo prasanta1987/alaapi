@@ -462,7 +462,7 @@ export function HardwareDevicesTab({ onSaved }) {
                 title="Play 4-tone acoustic chime"
               >
                 <Play className={`w-3.5 h-3.5 ${isPlayingChime ? 'animate-spin' : ''}`} />
-                <span>{isPlayingChime ? 'Playing...' : 'Test'}</span>
+                {/* <span>{isPlayingChime ? 'Playing...' : 'Test'}</span> */}
               </button>
             </div>
             <p className="text-[10px] text-gray-500">
