@@ -1137,7 +1137,7 @@ export function CallStudioPage() {
           </div>
         )}
 
-        {/* Remote Video Actions: Mirror Toggle & Fit / Fill Zoom Toggle (Only shown for video calls) */}
+        {/* Remote Video Actions: Mirror Toggle, Fit / Fill Zoom Toggle & Fullscreen (Only shown for video calls) */}
         {remoteConnected && !isAudioOnly && (
           <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
             <button
@@ -1155,6 +1155,14 @@ export function CallStudioPage() {
             >
               <Scan className="w-3.5 h-3.5 text-purple-400" />
               <span className="text-[10px] hidden sm:inline">{isRemoteZoomed ? "Fill / Zoom" : "Fit"}</span>
+            </button>
+            <button
+              onClick={handleToggleFullscreen}
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Stage"}
+              className="bg-gray-900/80 hover:bg-gray-900 active:scale-95 text-gray-300 hover:text-white px-2.5 py-1 rounded-full backdrop-blur border border-purple-500/30 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg transition-all"
+            >
+              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-purple-400" /> : <Maximize2 className="w-3.5 h-3.5 text-purple-400" />}
+              <span className="text-[10px] hidden sm:inline">{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
             </button>
           </div>
         )}
@@ -1363,22 +1371,13 @@ export function CallStudioPage() {
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Room ID</span>
                 <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={copyRoomId}
-                  title="Copy Room ID"
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-                >
-                  {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                </button>
-                <button
-                  onClick={handleToggleFullscreen}
-                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-                >
-                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                </button>
-              </div>
+              <button
+                onClick={copyRoomId}
+                title="Copy Room ID"
+                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+              >
+                {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              </button>
             </div>
           )}
 
@@ -1389,19 +1388,10 @@ export function CallStudioPage() {
               <span>{formatDuration(callDuration)}</span>
             </div>
 
-            {/* Dual VU Meters: Mic VU & Network VU (+ Fullscreen button when connected) */}
+            {/* Dual VU Meters: Mic VU & Network VU */}
             <div className="flex items-center gap-1.5">
               {renderMicVuMeter()}
               {renderNetworkVuMeter()}
-              {remoteConnected && (
-                <button
-                  onClick={handleToggleFullscreen}
-                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors ml-0.5"
-                >
-                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                </button>
-              )}
             </div>
           </div>
 
