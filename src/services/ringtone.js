@@ -121,7 +121,7 @@ export function getSelectedRingtone() {
       return stored;
     }
   } catch (e) {}
-  return 'jingle_bells';
+  return 'carol_of_bells';
 }
 
 export function saveSelectedRingtone(id) {
