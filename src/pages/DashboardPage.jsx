@@ -185,6 +185,31 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
     }
   };
 
+  // Handle student-to-teacher assignment (Admin can assign directly from dashboard cards)
+  const handleAssignTeacher = async (studentUser, newTeacherId) => {
+    try {
+      const selectedTeacher = allUsers.find(u => u.id === newTeacherId && u.role === 'teacher');
+      if (newTeacherId && !selectedTeacher) {
+        setCallNotice('Only users with the Teacher role can be assigned as instructors.');
+        return;
+      }
+      const teacherName = selectedTeacher ? (selectedTeacher.displayName || selectedTeacher.email || 'Teacher') : '';
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', studentUser.id);
+      await updateDoc(userRef, {
+        teacherId: newTeacherId || '',
+        teacherName: teacherName || '',
+        teacherAssignedAt: new Date().toISOString()
+      });
+      setRoleUpdateMsg(newTeacherId 
+        ? `Assigned student "${studentUser.displayName || 'Student'}" to teacher ${teacherName}`
+        : `Removed teacher assignment from "${studentUser.displayName || 'Student'}"`);
+      setTimeout(() => setRoleUpdateMsg(''), 4000);
+    } catch (err) {
+      console.error("Failed to assign teacher:", err);
+      setCallNotice(`Failed to assign teacher: ${err.message}`);
+    }
+  };
+
   if (!currentUser) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-4">
@@ -207,13 +232,32 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
     );
   }
 
-  // Filter students
-  const studentsList = allUsers.filter(u =>
-    u.role === 'student' &&
-    ((u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+  // Available instructors (only users with 'teacher' role can be assigned)
+  const availableTeachers = allUsers.filter(u => u.role === 'teacher');
+
+  // Admins list for teachers and users to contact academy administration
+  const adminsList = allUsers.filter(u => u.role === 'admin' && u.id !== currentUser?.uid);
+
+  // For student view: resolve their assigned teacher (only if assigned to an active teacher)
+  const currentStudentDoc = allUsers.find(u => u.id === currentUser?.uid);
+  const assignedTeacherId = userProfile?.teacherId || currentStudentDoc?.teacherId;
+  const assignedTeacher = assignedTeacherId 
+    ? allUsers.find(u => u.id === assignedTeacherId && u.role === 'teacher') 
+    : null;
+
+  // Filter students: Teachers only see their assigned students, Admins see all students
+  const studentsList = allUsers.filter(u => {
+    if (u.role !== 'student') return false;
+    // Non-admin teacher can ONLY see their assigned students
+    if (!isAdmin && role === 'teacher' && u.teacherId !== currentUser?.uid) {
+      return false;
+    }
+    return (
+      (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.instrument || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.phone || '').includes(searchTerm))
-  );
+      (u.phone || '').includes(searchTerm)
+    );
+  });
 
   // Filter teachers (teachers strictly, excluding admins from regular teacher list)
   const teachersList = allUsers.filter(u =>
@@ -290,14 +334,14 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* <button
-            onClick={handleOpenSettings}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/60 text-purple-200 text-xs font-semibold border border-purple-600/40 transition-colors shadow-sm"
-            title="Configure Acoustic Pre-processing"
+          <Link
+            to="/tuner"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-900/50 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
+            title="Open Indian Classical Pitch Monitor & Swara Tuner"
           >
-            <Sliders className="w-3.5 h-3.5 text-purple-400" />
-            Audio DSP Settings
-          </button> */}
+            <Music className="w-3.5 h-3.5 text-purple-400" />
+            Swara Tuner
+          </Link>
           <button
             onClick={onOpenProfile}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700 transition-colors shadow-sm"
@@ -488,6 +532,29 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                       </p>
                     )}
 
+                    {/* Admin Quick Teacher Assignment for Students */}
+                    {user.role === 'student' && (
+                      <div className="mb-3 p-2 bg-gray-900/70 border border-gray-700/50 rounded-xl flex items-center justify-between gap-2 text-xs">
+                        <span className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0 font-medium">
+                          <GraduationCap className="w-3.5 h-3.5 text-purple-400" />
+                          Teacher:
+                        </span>
+                        <select
+                          value={user.teacherId || ''}
+                          onChange={(e) => handleAssignTeacher(user, e.target.value)}
+                          className="bg-gray-950 border border-gray-700 hover:border-purple-500 text-gray-200 text-xs font-medium rounded-lg px-2 py-1 outline-none max-w-[170px] truncate cursor-pointer"
+                          title="Assign Teacher"
+                        >
+                          <option value="">-- Unassigned --</option>
+                          {availableTeachers.map(t => (
+                            <option key={t.id} value={t.id}>
+                              {t.displayName || t.email || 'Teacher'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     {/* Admin Calling Buttons: Video & Audio call options, ONLY IF ONLINE */}
                     {online ? (
                       <div className="grid grid-cols-2 gap-2 mt-auto">
@@ -526,10 +593,10 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <GraduationCap className="w-5 h-5 text-emerald-400" />
-                Student Directory & 1-Click Direct Calling
+                My Assigned Students & 1-Click Calling
               </h3>
               <p className="text-xs text-gray-400">
-                Click "Call" to ring a student directly on their active session without needing a Room ID.
+                Direct 1-click calling to your assigned students and academy administration.
               </p>
             </div>
 
@@ -550,8 +617,11 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             <p className="text-center py-8 text-gray-500 text-xs">Loading students...</p>
           ) : studentsList.length === 0 ? (
             <div className="text-center py-8 bg-gray-950/40 rounded-2xl border border-gray-800/60">
-              <p className="text-gray-400 text-sm font-medium">No students found.</p>
-              <p className="text-gray-500 text-xs mt-1">Students will appear here once they sign in with Google.</p>
+              <Users className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+              <p className="text-gray-300 text-sm font-medium">No students currently assigned to your roster.</p>
+              <p className="text-gray-500 text-xs mt-1">
+                Once an administrator assigns students to your account, they will appear here with live online status for 1-click calling.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -601,11 +671,17 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                         {student.phone && !student.email && (
                           <p className="text-xs text-gray-400 truncate">{student.phone}</p>
                         )}
-                        {student.instrument && (
-                          <span className="inline-block mt-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
-                            {student.instrument}
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/70 px-2 py-0.5 rounded border border-emerald-800/40">
+                            <CheckCircle className="w-3 h-3 text-emerald-400" />
+                            Assigned Student
                           </span>
-                        )}
+                          {student.instrument && (
+                            <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">
+                              {student.instrument}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -645,6 +721,103 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               })}
             </div>
           )}
+
+          {/* Academy Administration Calling for Teachers */}
+          <div className="mt-8 pt-6 border-t border-gray-800/80">
+            <div className="mb-4">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-purple-400" />
+                Academy Administration & Faculty Support
+              </h4>
+              <p className="text-xs text-gray-400">
+                Need technical assistance or session coordination? Call academy administrators directly:
+              </p>
+            </div>
+
+            {adminsList.length === 0 ? (
+              <p className="text-xs text-gray-500 italic">No academy administrators currently listed.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {adminsList.map(admin => {
+                  const online = isUserOnline(admin);
+                  return (
+                    <div
+                      key={admin.id}
+                      className="bg-gray-800/40 border border-purple-900/40 hover:border-purple-600/50 p-3.5 rounded-2xl flex flex-col justify-between transition-all shadow group"
+                    >
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="relative shrink-0">
+                          <UserAvatar
+                            photoURL={admin.photoURL}
+                            name={admin.displayName || 'Administrator'}
+                            size="md"
+                          />
+                          <span
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${
+                              online ? 'bg-emerald-400' : 'bg-gray-500'
+                            }`}
+                          />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <h5 className="text-xs font-bold text-white truncate group-hover:text-purple-300 transition-colors">
+                              {admin.displayName || 'Administrator'}
+                            </h5>
+                            <span
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border shrink-0 ${
+                                online
+                                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                                  : 'bg-gray-900 text-gray-400 border-gray-700'
+                              }`}
+                            >
+                              <span
+                                className={`w-1 h-1 rounded-full ${
+                                  online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+                                }`}
+                              />
+                              {online ? 'Online' : 'Offline'}
+                            </span>
+                          </div>
+                          {admin.email && (
+                            <p className="text-[11px] text-gray-400 truncate font-mono">{admin.email}</p>
+                          )}
+                          <span className="inline-block mt-1 text-[9px] font-semibold text-purple-300 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800/50 uppercase">
+                            Admin
+                          </span>
+                        </div>
+                      </div>
+
+                      {online ? (
+                        <div className="grid grid-cols-2 gap-2 mt-auto">
+                          <button
+                            onClick={() => initiateDirectCall(admin, 'video')}
+                            className="py-1.5 px-2 rounded-xl active:scale-95 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow transition-all"
+                            title="Start Video Call with Administrator"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            <span>Video Call</span>
+                          </button>
+                          <button
+                            onClick={() => initiateDirectCall(admin, 'audio')}
+                            className="py-1.5 px-2 rounded-xl active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow transition-all"
+                            title="Start Audio Call with Administrator"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>Audio Call</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-auto py-1.5 px-2 rounded-xl bg-gray-900/60 border border-gray-800 text-center text-xs text-gray-500">
+                          Admin is offline
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
       ) : null}
 
@@ -717,52 +890,80 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             </div>
           </div>
 
+          {/* Student's Assigned Instructor Section */}
           <div>
-            <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-              <GraduationCap className="w-4 h-4 text-purple-400" />
-              Faculty & Teachers
-            </h4>
-            {teachersList.length === 0 ? (
-              <p className="text-xs text-gray-500 italic py-1">No teachers currently registered.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {teachersList.map(teacher => {
-                  const online = isUserOnline(teacher);
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <GraduationCap className="w-4 h-4 text-purple-400" />
+                Your Assigned Teacher
+              </h4>
+              {assignedTeacher && (
+                <span className="text-[11px] font-medium text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3 text-emerald-400" />
+                  Assigned
+                </span>
+              )}
+            </div>
+
+            {assignedTeacher ? (
+              <div className="max-w-md">
+                {(() => {
+                  const online = isUserOnline(assignedTeacher);
                   return (
-                    <div key={teacher.id} className="bg-gray-800/40 border border-gray-700/60 p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                    <div className="bg-emerald-950/20 border border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-md">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="relative shrink-0">
                           <UserAvatar
-                            photoURL={teacher.photoURL}
-                            name={teacher.displayName || 'Teacher'}
-                            size="sm"
+                            photoURL={assignedTeacher.photoURL}
+                            name={assignedTeacher.displayName || assignedTeacher.email || 'Teacher'}
+                            size="md"
                           />
                           <span
-                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${online ? 'bg-emerald-400' : 'bg-gray-500'
-                              }`}
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${
+                              online ? 'bg-emerald-400' : 'bg-gray-500'
+                            }`}
                           />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-white truncate">{teacher.displayName || 'Teacher'}</p>
-                          <p className="text-[11px] text-gray-400 truncate">{teacher.instrument || 'Vocal Instructor'}</p>
+                          <p className="text-sm font-bold text-white truncate flex items-center gap-1.5">
+                            {assignedTeacher.displayName || assignedTeacher.email || 'Teacher'}
+                            <span className="text-[9px] font-bold text-emerald-300 bg-emerald-900/60 px-1.5 py-0.2 rounded border border-emerald-600/40">
+                              Instructor
+                            </span>
+                          </p>
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {assignedTeacher.instrument || 'Vocal Instructor'}
+                          </p>
                         </div>
                       </div>
 
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                          : 'bg-gray-900 text-gray-400 border-gray-700'
-                          }`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
+                          online
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                            : 'bg-gray-900 text-gray-400 border-gray-700'
+                        }`}
                       >
                         <span
-                          className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                            }`}
+                          className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}
                         />
                         {online ? 'Online' : 'Offline'}
                       </span>
                     </div>
                   );
-                })}
+                })()}
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-gray-950/50 border border-gray-800 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gray-900 border border-gray-800 flex items-center justify-center text-gray-500 shrink-0">
+                  <GraduationCap className="w-5 h-5 text-gray-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-300">No Teacher Assigned Yet</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    An academy administrator has not assigned an instructor to your account yet. When assigned, your teacher will appear here.
+                  </p>
+                </div>
               </div>
             )}
           </div>

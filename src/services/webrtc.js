@@ -371,7 +371,97 @@ export function optimizeSdpForMusic(sdp) {
   return modifiedLines.join('\r\n') + '\r\n';
 }
 
-export async function optimizeAudioSenders(peerConnection) {
+// ==========================================================================
+// Speech Mode Audio Optimization for Voice Calls (OPUS 64kbps Mono VBR with AEC)
+// ==========================================================================
+export function optimizeSdpForSpeech(sdp) {
+  if (!sdp || typeof sdp !== 'string') return sdp;
+
+  const rawLines = sdp.split(/\r\n|\n/);
+  const lines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
+  const modifiedLines = [];
+  let opusPayloadType = null;
+  let inAudioMedia = false;
+
+  for (const line of lines) {
+    const match = line.match(/^a=rtpmap:(\d+)\s+opus\/48000/i);
+    if (match) {
+      opusPayloadType = match[1];
+      break;
+    }
+  }
+
+  let fmtpLineFound = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith('m=audio')) {
+      inAudioMedia = true;
+      modifiedLines.push(line);
+      modifiedLines.push('b=AS:64');
+      modifiedLines.push('b=TIAS:64000');
+      continue;
+    } else if (line.startsWith('m=')) {
+      inAudioMedia = false;
+    }
+
+    if (inAudioMedia && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+      continue;
+    }
+
+    if (inAudioMedia && opusPayloadType && line.startsWith(`a=fmtp:${opusPayloadType}`)) {
+      fmtpLineFound = true;
+      let existingParams = line.substring(`a=fmtp:${opusPayloadType} `.length);
+      const paramMap = new Map();
+
+      existingParams.split(';').forEach(p => {
+        const parts = p.trim().split('=');
+        if (parts[0]) {
+          paramMap.set(parts[0].toLowerCase(), parts[1] || '');
+        }
+      });
+
+      // Voice Call Speech Mode Constraints:
+      // stereo=0 & sprop-stereo=0: Mono signal enabling maximum browser AEC (echo cancellation) performance
+      // maxaveragebitrate=64000: Speech bandwidth
+      // useinbandfec=1: Adaptive packet loss recovery
+      // cbr=0: Dynamic voice encoding
+      paramMap.set('stereo', '0');
+      paramMap.set('sprop-stereo', '0');
+      paramMap.set('maxaveragebitrate', '64000');
+      paramMap.set('maxplaybackrate', '48000');
+      paramMap.set('sprop-maxcapturerate', '48000');
+      paramMap.set('cbr', '0');
+      paramMap.set('useinbandfec', '1');
+      paramMap.set('minptime', '10');
+
+      const reconstructed = Array.from(paramMap.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join(';');
+
+      modifiedLines.push(`a=fmtp:${opusPayloadType} ${reconstructed}`);
+      continue;
+    }
+
+    modifiedLines.push(line);
+  }
+
+  if (!fmtpLineFound && opusPayloadType) {
+    const rtpIndex = modifiedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPayloadType}`));
+    if (rtpIndex !== -1) {
+      modifiedLines.splice(
+        rtpIndex + 1,
+        0,
+        `a=fmtp:${opusPayloadType} minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000;maxplaybackrate=48000;sprop-maxcapturerate=48000;cbr=0`
+      );
+    }
+  }
+
+  return modifiedLines.join('\r\n') + '\r\n';
+}
+
+export async function optimizeAudioSenders(peerConnection, isAudioOnly = false) {
   if (!peerConnection || typeof peerConnection.getSenders !== 'function') return;
 
   try {
@@ -383,13 +473,15 @@ export async function optimizeAudioSenders(peerConnection) {
           params.encodings = [{}];
         }
         params.encodings.forEach(enc => {
-          enc.maxBitrate = 256000; // 256kbps audio
+          enc.maxBitrate = isAudioOnly ? 64000 : 256000;
           enc.priority = 'high';
           enc.networkPriority = 'high';
-          enc.dtx = 'disabled'; // Never cut audio during soft vocal sustains
+          enc.dtx = isAudioOnly ? 'enabled' : 'disabled';
         });
         await sender.setParameters(params);
-        console.log("[WebRTC Audio] Audio sender optimized: 256kbps stereo CBR, DTX disabled, high network priority.");
+        console.log(isAudioOnly
+          ? "[WebRTC Audio] Audio sender optimized for Voice Call: 64kbps Speech Mode with AEC & DTX."
+          : "[WebRTC Audio] Audio sender optimized: 256kbps stereo CBR, DTX disabled, high network priority.");
       }
     }
   } catch (err) {

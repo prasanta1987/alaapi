@@ -12,6 +12,7 @@ import { IncomingCallModal } from './components/IncomingCallModal';
 import { OutgoingCallModal } from './components/OutgoingCallModal';
 import { ProfileModal } from './components/ProfileModal';
 import { DeviceSetupModal } from './components/DeviceSetupModal';
+import { unlockAudioContext } from './services/ringtone';
 
 export function AppContent() {
   const { currentUser } = useAuth();
@@ -45,9 +46,70 @@ export function AppContent() {
     }
   }, [location.search]);
 
+  // Ghost touch simulation on Android / mobile on page visit to warm up browser user gesture state & unlock audio for incoming calls
+  useEffect(() => {
+    const performGhostTouch = () => {
+      try {
+        unlockAudioContext();
+        if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+          const target = document.body || document.documentElement;
+          try {
+            if (typeof Touch !== 'undefined' && typeof TouchEvent !== 'undefined') {
+              const touch = new Touch({
+                identifier: Date.now(),
+                target,
+                clientX: 20,
+                clientY: 20,
+                radiusX: 2.5,
+                radiusY: 2.5,
+                rotationAngle: 0,
+                force: 0.5
+              });
+              target.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [touch] }));
+              target.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [] }));
+            }
+          } catch (_) {}
+
+          try {
+            target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+            target.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+            target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: 20, clientY: 20 }));
+          } catch (_) {}
+        }
+      } catch (err) {
+        console.warn("Ghost touch initialization skipped:", err);
+      }
+    };
+
+    performGhostTouch();
+
+    const handleFirstInteraction = () => {
+      unlockAudioContext();
+      window.removeEventListener('pointerdown', handleFirstInteraction, true);
+      window.removeEventListener('touchstart', handleFirstInteraction, true);
+      window.removeEventListener('click', handleFirstInteraction, true);
+      window.removeEventListener('keydown', handleFirstInteraction, true);
+    };
+
+    window.addEventListener('pointerdown', handleFirstInteraction, true);
+    window.addEventListener('touchstart', handleFirstInteraction, true);
+    window.addEventListener('click', handleFirstInteraction, true);
+    window.addEventListener('keydown', handleFirstInteraction, true);
+
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstInteraction, true);
+      window.removeEventListener('touchstart', handleFirstInteraction, true);
+      window.removeEventListener('click', handleFirstInteraction, true);
+      window.removeEventListener('keydown', handleFirstInteraction, true);
+    };
+  }, []);
+
+  const isTunerPage = location.pathname === '/tuner';
+  const hideNavbar = isInCall || isTunerPage;
+
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 overflow-hidden select-none">
-      {!isInCall && (
+      {!hideNavbar && (
         <Navbar
           onOpenProfile={handleOpenProfile}
           onOpenDeviceSetup={() => handleOpenSettings()}
@@ -62,7 +124,7 @@ export function AppContent() {
           </Routes>
         </div>
       ) : (
-        <main className="flex-1 w-full overflow-y-auto overflow-x-hidden">
+        <main className={`flex-1 w-full ${isTunerPage ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <Routes>
             <Route
               path="/"

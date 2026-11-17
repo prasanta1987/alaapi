@@ -32,6 +32,7 @@ import {
   closePeerConnection,
   pc,
   optimizeSdpForMusic,
+  optimizeSdpForSpeech,
   optimizeAudioSenders
 } from '../services/webrtc';
 import {
@@ -54,7 +55,8 @@ import {
   Volume2,
   VolumeX,
   Headphones,
-  Phone
+  Phone,
+  Music
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -489,7 +491,7 @@ export function CallStudioPage() {
 
               setRemoteConnected(true);
               setIsReconnecting(false);
-              setStatusText("Connected! High-fidelity audio active.");
+              setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
 
               if (unansweredTimeoutRef.current) {
                 clearTimeout(unansweredTimeoutRef.current);
@@ -515,7 +517,7 @@ export function CallStudioPage() {
                 iceRestartTimerRef.current = null;
               }
               setIsReconnecting(false);
-              setStatusText("Connected! High-fidelity audio active.");
+              setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
             } else if (state === 'disconnected' || state === 'failed') {
               setIsReconnecting(true);
               setStatusText("Network interruption... Reconnecting...");
@@ -537,14 +539,15 @@ export function CallStudioPage() {
                         pc.restartIce();
                       }
                       const offer = await pc.createOffer({ iceRestart: true });
-                      const musicOffer = new RTCSessionDescription({
+                      const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+                      const rtcOffer = new RTCSessionDescription({
                         type: offer.type,
-                        sdp: optimizeSdpForMusic(offer.sdp)
+                        sdp
                       });
-                      await pc.setLocalDescription(musicOffer);
-                      await optimizeAudioSenders(pc);
+                      await pc.setLocalDescription(rtcOffer);
+                      await optimizeAudioSenders(pc, isAudioOnly);
                       await updateDoc(roomRef, {
-                        offer: { type: musicOffer.type, sdp: musicOffer.sdp },
+                        offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
                         answer: null
                       });
                     } catch (e) {
@@ -613,13 +616,14 @@ export function CallStudioPage() {
           }, { merge: true });
 
           const offer = await pc.createOffer();
-          const musicOffer = new RTCSessionDescription({
+          const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+          const rtcOffer = new RTCSessionDescription({
             type: offer.type,
-            sdp: optimizeSdpForMusic(offer.sdp)
+            sdp
           });
-          await pc.setLocalDescription(musicOffer);
-          await optimizeAudioSenders(pc);
-          await updateDoc(roomRef, { offer: { type: musicOffer.type, sdp: musicOffer.sdp } });
+          await pc.setLocalDescription(rtcOffer);
+          await optimizeAudioSenders(pc, isAudioOnly);
+          await updateDoc(roomRef, { offer: { type: rtcOffer.type, sdp: rtcOffer.sdp } });
 
           roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
             if (!snapshot.exists()) {
@@ -693,15 +697,16 @@ export function CallStudioPage() {
                 await pc.setRemoteDescription(offerDesc);
 
                 const answer = await pc.createAnswer();
-                const musicAnswer = new RTCSessionDescription({
+                const sdp = isAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
+                const rtcAnswer = new RTCSessionDescription({
                   type: answer.type,
-                  sdp: optimizeSdpForMusic(answer.sdp)
+                  sdp
                 });
-                await pc.setLocalDescription(musicAnswer);
-                await optimizeAudioSenders(pc);
+                await pc.setLocalDescription(rtcAnswer);
+                await optimizeAudioSenders(pc, isAudioOnly);
 
                 await updateDoc(roomRef, {
-                  answer: { type: musicAnswer.type, sdp: musicAnswer.sdp },
+                  answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
                   calleeMirrored: isLocalMirrored,
                   guest: currentUser ? {
                     uid: currentUser.uid,
@@ -709,7 +714,7 @@ export function CallStudioPage() {
                   } : null
                 });
 
-                setStatusText("Connected! High-fidelity audio active.");
+                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
               } catch (err) {
                 console.error("Callee answer failed:", err);
                 discardCallSession("Failed to establish audio/video stream.", false);
@@ -1406,10 +1411,18 @@ export function CallStudioPage() {
               <span>{formatDuration(callDuration)}</span>
             </div>
 
-            {/* Dual VU Meters: Mic VU & Network VU */}
+            {/* Dual VU Meters: Mic VU & Network VU (+ Tuner link) */}
             <div className="flex items-center gap-1.5">
               {renderMicVuMeter()}
               {renderNetworkVuMeter()}
+              <button
+                type="button"
+                onClick={() => window.open('/tuner', '_blank')}
+                title="Open Swara & Pitch Tuner in a new tab"
+                className="text-gray-400 hover:text-purple-300 p-1 rounded hover:bg-gray-800 transition-colors ml-0.5"
+              >
+                <Music className="w-3.5 h-3.5 text-purple-400" />
+              </button>
             </div>
           </div>
 

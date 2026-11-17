@@ -80,8 +80,63 @@ export function saveAudioSettings(newSettings) {
   return { ...audioSettings };
 }
 
-export function buildAudioConstraints(deviceId = null) {
-  const current = getAudioSettings();
+export const STORAGE_KEY_VOICE_CALL_DSP = 'alaapi_voice_call_dsp_settings_v1';
+
+export function loadStoredVoiceCallAudioSettings() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_VOICE_CALL_DSP);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        echoCancellation: parsed.echoCancellation !== false,
+        noiseSuppression: parsed.noiseSuppression !== false,
+        autoGainControl: parsed.autoGainControl !== false,
+        highpassFilter: Boolean(parsed.highpassFilter)
+      };
+    }
+  } catch (e) {
+    console.warn("Could not read voice call audio DSP settings from localStorage:", e);
+  }
+  return {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    highpassFilter: true
+  };
+}
+
+export let voiceCallAudioSettings = loadStoredVoiceCallAudioSettings();
+
+export function getVoiceCallAudioSettings() {
+  voiceCallAudioSettings = loadStoredVoiceCallAudioSettings();
+  return { ...voiceCallAudioSettings };
+}
+
+export function saveVoiceCallAudioSettings(newSettings) {
+  voiceCallAudioSettings = { ...voiceCallAudioSettings, ...newSettings };
+  try {
+    localStorage.setItem(STORAGE_KEY_VOICE_CALL_DSP, JSON.stringify(voiceCallAudioSettings));
+  } catch (e) {
+    console.warn("Could not write voice call audio DSP settings to localStorage:", e);
+  }
+  return { ...voiceCallAudioSettings };
+}
+
+// Temporary in-call speech mode tracking for voice calls
+let isCurrentVoiceCall = false;
+
+export function setVoiceCallMode(active) {
+  isCurrentVoiceCall = Boolean(active);
+}
+
+export function isVoiceCallModeActive() {
+  return isCurrentVoiceCall;
+}
+
+export function buildAudioConstraints(deviceId = null, isVoiceCall = isCurrentVoiceCall) {
+  // Pull from voice call specific settings if in voice call, otherwise user's studio music settings
+  const current = isVoiceCall ? getVoiceCallAudioSettings() : getAudioSettings();
+  
   const isEchoCancel = Boolean(current.echoCancellation);
   const isNoiseSuppress = Boolean(current.noiseSuppression);
   const isAutoGain = Boolean(current.autoGainControl);
@@ -91,7 +146,7 @@ export function buildAudioConstraints(deviceId = null) {
     googEchoCancellation: isEchoCancel,
     noiseSuppression: isNoiseSuppress,
     googNoiseSuppression: isNoiseSuppress,
-    googHighpassFilter: isNoiseSuppress,
+    googHighpassFilter: isNoiseSuppress || Boolean(current.highpassFilter),
     autoGainControl: isAutoGain,
     googAutoGainControl: isAutoGain
   };
@@ -99,6 +154,8 @@ export function buildAudioConstraints(deviceId = null) {
   if (isEchoCancel) {
     // Standard AEC requires mono in WebRTC
     constraints.channelCount = { ideal: 1 };
+    constraints.sampleRate = { ideal: 48000 };
+    constraints.sampleSize = { ideal: 16 };
   } else {
     // Studio Master High-Fidelity Music Constraints:
     // Pure 48kHz stereo, zero speech compression filters, ultra-low latency hardware buffers
@@ -214,6 +271,8 @@ export function getMusicConstraints(facingMode = currentFacingMode, preferredCam
 }
 
 export async function setupLocalMedia(localVideoElement, speakerContainer = null, audioOnly = false) {
+  isCurrentVoiceCall = Boolean(audioOnly);
+
   if (localStream) {
     if (audioOnly) {
       // If a previous video stream was left active, shut down its video tracks completely
@@ -236,7 +295,7 @@ export async function setupLocalMedia(localVideoElement, speakerContainer = null
   if (audioOnly) {
     isVideoStopped = true;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints(null, true) });
     } catch (err) {
       console.warn("Could not acquire standalone audio track for audio call:", err.message);
       stream = new MediaStream();
@@ -336,6 +395,7 @@ export async function setupLocalMedia(localVideoElement, speakerContainer = null
 }
 
 export function stopLocalMedia(localVideoElement = null) {
+  isCurrentVoiceCall = false;
   if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
@@ -497,7 +557,7 @@ export async function handleDeviceSwitch({ selectedCamId, selectedMicId, facingM
   // 2. Switch Audio Track if microphone requested or available
   if (selectedMicId !== undefined) {
     try {
-      const audioConstraints = buildAudioConstraints(selectedMicId);
+      const audioConstraints = buildAudioConstraints(selectedMicId, isCurrentVoiceCall);
       const tempAudioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       const newAudioTrack = tempAudioStream.getAudioTracks()[0];
 

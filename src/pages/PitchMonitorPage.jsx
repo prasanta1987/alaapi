@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { requestScreenWakeLock, releaseScreenWakeLock } from '../services/media';
 import {
   Music,
   Mic,
@@ -8,8 +9,11 @@ import {
   ArrowLeft,
   Sliders,
   Volume2,
+  VolumeX,
   Play,
-  Square
+  Square,
+  Radio,
+  Sparkles
 } from 'lucide-react';
 
 const WESTERN_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -40,12 +44,20 @@ const SENSITIVITY_THRESHOLDS = {
 
 const MAX_POINTS = 360;
 
+// Root Frequency for vocal octave (middle Sa around 130Hz - 260Hz)
+const getRootFreq = (offset) => 440 * Math.pow(2, ((48 + offset) - 69) / 12);
+
 export function PitchMonitorPage() {
   const navigate = useNavigate();
 
   // UI & Controls State
   const [isRunning, setIsRunning] = useState(false);
   const [isDemoRunning, setIsDemoRunning] = useState(false);
+  const [isTanpuraRunning, setIsTanpuraRunning] = useState(false);
+  const [tanpuraVolume, setTanpuraVolume] = useState(45); // 0..100%
+  const [tanpuraFirstString, setTanpuraFirstString] = useState('Pa'); // 'Pa' | 'Ma' | 'Ni'
+  const [activePluckIndex, setActivePluckIndex] = useState(-1); // 0..3 string index
+
   const [saOffset, setSaOffset] = useState(10); // Default A# / Bb (Kali 5)
   const [sensitivity, setSensitivity] = useState('normal');
   const [devices, setDevices] = useState([]);
@@ -71,15 +83,33 @@ export function PitchMonitorPage() {
   const rafIdRef = useRef(null);
   const timeDomainBufRef = useRef(null);
 
+  // Tanpura Refs
+  const tanpuraCtxRef = useRef(null);
+  const tanpuraMasterGainRef = useRef(null);
+  const tanpuraTimerRef = useRef(null);
+  const saOffsetRef = useRef(saOffset);
+  const tanpuraFirstStringRef = useRef(tanpuraFirstString);
+  const tanpuraVolumeRef = useRef(tanpuraVolume);
+
   const pitchHistoryRef = useRef(new Array(MAX_POINTS).fill(null));
   const minMidiRef = useRef(48); // C3
   const maxMidiRef = useRef(72); // C5
-  const saOffsetRef = useRef(saOffset);
   const sensitivityRef = useRef(sensitivity);
 
   useEffect(() => {
     saOffsetRef.current = saOffset;
   }, [saOffset]);
+
+  useEffect(() => {
+    tanpuraFirstStringRef.current = tanpuraFirstString;
+  }, [tanpuraFirstString]);
+
+  useEffect(() => {
+    tanpuraVolumeRef.current = tanpuraVolume;
+    if (tanpuraMasterGainRef.current) {
+      tanpuraMasterGainRef.current.gain.value = (tanpuraVolume / 100) * 0.7;
+    }
+  }, [tanpuraVolume]);
 
   useEffect(() => {
     sensitivityRef.current = sensitivity;
@@ -351,7 +381,7 @@ export function PitchMonitorPage() {
     return () => window.removeEventListener('resize', drawGraph);
   }, [drawGraph, saOffset]);
 
-  // Clean up all audio resources
+  // Clean up pitch detector audio resources
   const stopAllAudio = useCallback(() => {
     if (rafIdRef.current) {
       cancelAnimationFrame(rafIdRef.current);
@@ -374,9 +404,136 @@ export function PitchMonitorPage() {
     setIsDemoRunning(false);
   }, []);
 
+  // Tanpura Drone Plucker Synthesis
+  const stopTanpura = useCallback(() => {
+    if (tanpuraTimerRef.current) {
+      clearInterval(tanpuraTimerRef.current);
+      tanpuraTimerRef.current = null;
+    }
+    if (tanpuraCtxRef.current) {
+      tanpuraCtxRef.current.close().catch(() => {});
+      tanpuraCtxRef.current = null;
+    }
+    tanpuraMasterGainRef.current = null;
+    setIsTanpuraRunning(false);
+    setActivePluckIndex(-1);
+  }, []);
+
+  // Screen Wake Lock: keeps device screen awake while tuning or singing
   useEffect(() => {
-    return () => stopAllAudio();
-  }, [stopAllAudio]);
+    requestScreenWakeLock().catch(() => {});
+    return () => {
+      releaseScreenWakeLock();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopAllAudio();
+      stopTanpura();
+    };
+  }, [stopAllAudio, stopTanpura]);
+
+  // Plucks an acoustic-simulated Tanpura string with harmonic buzz and exponential decay
+  const pluckString = (ctx, masterGain, freq, stringIdx) => {
+    if (!ctx || ctx.state === 'closed') return;
+    const now = ctx.currentTime;
+
+    // 1. Primary string oscillator (Triangle wave for pure fundamental resonance)
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(freq, now);
+
+    // 2. Secondary string oscillator (Sawtooth wave with high-cut filter for rich jawari buzz)
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(freq, now);
+
+    // 3. Jawari resonance filter (body resonance)
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(Math.min(1800, freq * 7), now);
+    filter.Q.setValueAtTime(2.5, now);
+
+    // 4. String Gain Envelope (Fast attack ~35ms, gentle sustain, smooth exponential decay ~4.2s)
+    const stringGain = ctx.createGain();
+    stringGain.gain.setValueAtTime(0.0001, now);
+    stringGain.gain.exponentialRampToValueAtTime(0.22, now + 0.035);
+    stringGain.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
+
+    // Secondary oscillator gain (softer, providing jawari shimmer)
+    const osc2Gain = ctx.createGain();
+    osc2Gain.gain.value = 0.28;
+
+    osc1.connect(stringGain);
+    osc2.connect(filter);
+    filter.connect(osc2Gain);
+    osc2Gain.connect(stringGain);
+    stringGain.connect(masterGain);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 4.3);
+    osc2.stop(now + 4.3);
+
+    setActivePluckIndex(stringIdx);
+  };
+
+  // Toggle Background Tanpura Drone (Sa-Pa / Sa-Ma plucked string cycle)
+  const toggleTanpura = async () => {
+    if (isTanpuraRunning) {
+      stopTanpura();
+      return;
+    }
+
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContextClass();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      tanpuraCtxRef.current = ctx;
+
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = (tanpuraVolumeRef.current / 100) * 0.7;
+      masterGain.connect(ctx.destination);
+      tanpuraMasterGainRef.current = masterGain;
+
+      let step = 0;
+      const playTanpuraPluck = () => {
+        const rootFreq = getRootFreq(saOffsetRef.current);
+        const firstStr = tanpuraFirstStringRef.current;
+
+        let str1Freq;
+        if (firstStr === 'Ma') {
+          str1Freq = rootFreq * 0.6674; // Mandra Ma (4th)
+        } else if (firstStr === 'Ni') {
+          str1Freq = rootFreq * 0.9438; // Mandra Ni (major 7th)
+        } else {
+          str1Freq = rootFreq * 0.74915; // Mandra Pa (5th)
+        }
+
+        const strings = [
+          str1Freq,              // String 1: Pa / Ma / Ni
+          rootFreq,              // String 2: Jodi Sa 1
+          rootFreq * 1.002,      // String 3: Jodi Sa 2 (jawari shimmer detune)
+          rootFreq * 0.5         // String 4: Kharja Sa (Low octave)
+        ];
+
+        const stringIdx = step % 4;
+        pluckString(ctx, masterGain, strings[stringIdx], stringIdx);
+        step++;
+      };
+
+      playTanpuraPluck();
+      tanpuraTimerRef.current = setInterval(playTanpuraPluck, 1250); // 1.25s per string (5s complete cycle)
+
+      setIsTanpuraRunning(true);
+    } catch (err) {
+      console.warn("Could not start Tanpura drone:", err);
+      stopTanpura();
+    }
+  };
 
   // Animation & Audio Sampling Loop
   const startRenderLoop = useCallback(() => {
@@ -432,9 +589,26 @@ export function PitchMonitorPage() {
     rafIdRef.current = requestAnimationFrame(tick);
   }, [drawGraph]);
 
-  // Start Live Microphone Capture (48kHz / Raw Audio without DSP filters)
+  // Start Live Microphone Capture with fail-safe fallback
   const handleStartMic = async () => {
-    stopAllAudio();
+    // Stop any active demo or previous capture (Tanpura drone can stay running)
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    if (demoTimerRef.current) {
+      clearInterval(demoTimerRef.current);
+      demoTimerRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    setIsDemoRunning(false);
     setErrorMsg('');
 
     try {
@@ -445,19 +619,34 @@ export function PitchMonitorPage() {
       }
       audioCtxRef.current = ctx;
 
-      const audioConstraints = {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      };
-      if (selectedDeviceId) {
-        audioConstraints.deviceId = { ideal: selectedDeviceId };
+      let stream = null;
+      try {
+        const audioConstraints = {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        };
+        if (selectedDeviceId) {
+          audioConstraints.deviceId = { ideal: selectedDeviceId };
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+          video: false
+        });
+        setSampleRateLabel(`${(ctx.sampleRate / 1000).toFixed(1)}kHz Raw Studio Audio`);
+      } catch (rawErr) {
+        console.warn('Raw audio constraints rejected, falling back to standard audio:', rawErr);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: selectedDeviceId ? { deviceId: { ideal: selectedDeviceId } } : true,
+            video: false
+          });
+          setSampleRateLabel(`${(ctx.sampleRate / 1000).toFixed(1)}kHz Standard Audio`);
+        } catch (fallbackErr) {
+          throw fallbackErr;
+        }
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-        video: false
-      });
       mediaStreamRef.current = stream;
 
       await populateMicrophones();
@@ -470,7 +659,6 @@ export function PitchMonitorPage() {
       analyserRef.current = analyser;
       timeDomainBufRef.current = new Float32Array(analyser.fftSize);
 
-      setSampleRateLabel(`${(ctx.sampleRate / 1000).toFixed(1)}kHz Raw Audio`);
       setIsRunning(true);
       startRenderLoop();
     } catch (err) {
@@ -557,15 +745,18 @@ export function PitchMonitorPage() {
   const clampedCents = Math.max(-50, Math.min(50, readout.cents));
   const needleLeftPct = 50 + clampedCents;
 
+  const currentSaLabel = SA_OPTIONS.find((s) => s.value === saOffset)?.label || 'Kali 5';
+
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 overflow-hidden select-none">
       {/* Header Bar */}
-      <header className="bg-gray-900/90 border-b border-gray-800 px-3 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+      <header className="bg-gray-900/90 border-b border-gray-800 px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => {
               stopAllAudio();
+              stopTanpura();
               navigate(-1);
             }}
             className="p-2 rounded-xl bg-gray-800/80 hover:bg-gray-800 text-gray-300 hover:text-white border border-gray-700/60 transition-colors"
@@ -579,24 +770,25 @@ export function PitchMonitorPage() {
           </div>
 
           <div>
-            <h1 className="text-sm sm:text-base font-bold text-white leading-tight">
-              Alaapi Pitch Monitor
+            <h1 className="text-sm sm:text-base font-bold text-white leading-tight flex items-center gap-1.5">
+              <span>Alaapi Swara & Pitch Monitor</span>
             </h1>
             <p className="text-[11px] text-gray-400">
-              {sampleRateLabel} • Swara & Intonation Graph
+              {sampleRateLabel} • Intonation Meter
             </p>
           </div>
         </div>
 
-        {/* Controls */}
+        {/* Top Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Microphone device selection */}
           <select
             value={selectedDeviceId}
             onChange={(e) => {
               setSelectedDeviceId(e.target.value);
               if (isRunning) handleStartMic();
             }}
-            className="bg-gray-900 border border-gray-700 text-gray-200 text-xs font-semibold rounded-xl px-2.5 py-2 focus:outline-none focus:border-purple-500 max-w-[150px] sm:max-w-[190px] truncate"
+            className="bg-gray-900 border border-gray-700 text-gray-200 text-xs font-semibold rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-purple-500 max-w-[140px] sm:max-w-[180px] truncate"
             title="Microphone Input"
           >
             <option value="">Default Mic</option>
@@ -607,11 +799,12 @@ export function PitchMonitorPage() {
             ))}
           </select>
 
+          {/* Root Pitch (Sa) Selection */}
           <select
             value={saOffset}
             onChange={(e) => setSaOffset(Number(e.target.value))}
-            className="bg-gray-900 border border-gray-700 text-gray-200 text-xs font-semibold rounded-xl px-2.5 py-2 focus:outline-none focus:border-purple-500"
-            title="Select Root Note (Sa)"
+            className="bg-gray-900 border border-purple-500/50 text-purple-300 text-xs font-bold rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-purple-400"
+            title="Select Root Scale (Sa)"
           >
             {SA_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -620,6 +813,7 @@ export function PitchMonitorPage() {
             ))}
           </select>
 
+          {/* Sensitivity */}
           <div className="flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2 py-1">
             <Sliders className="w-3.5 h-3.5 text-gray-400 mr-1" />
             <select
@@ -634,21 +828,23 @@ export function PitchMonitorPage() {
             </select>
           </div>
 
+          {/* Clear Graph Button */}
           <button
             type="button"
             onClick={handleClear}
-            className="px-3 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs font-semibold text-gray-200 flex items-center gap-1.5 transition-colors"
-            title="Clear Graph"
+            className="px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs font-semibold text-gray-200 flex items-center gap-1.5 transition-colors"
+            title="Clear Graph History"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Clear</span>
           </button>
 
+          {/* Microphone Toggle Button */}
           {isRunning ? (
             <button
               type="button"
               onClick={stopAllAudio}
-              className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-600/25 transition-all"
+              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-600/25 transition-all"
             >
               <MicOff className="w-3.5 h-3.5" />
               Stop Mic
@@ -657,7 +853,7 @@ export function PitchMonitorPage() {
             <button
               type="button"
               onClick={handleStartMic}
-              className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all"
+              className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all"
             >
               <Mic className="w-3.5 h-3.5" />
               Start Mic
@@ -666,12 +862,99 @@ export function PitchMonitorPage() {
         </div>
       </header>
 
+      {/* Tanpura Drone Toolbar */}
+      <div className="bg-gray-950 px-3 sm:px-5 py-2 border-b border-gray-800/80 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Tanpura Drone Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleTanpura}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+              isTanpuraRunning
+                ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30'
+                : 'bg-gray-900 hover:bg-gray-850 text-amber-300 border border-amber-500/30'
+            }`}
+            title={isTanpuraRunning ? "Stop Tanpura Drone" : "Start Indian Classical Tanpura Drone"}
+          >
+            <Radio className={`w-3.5 h-3.5 ${isTanpuraRunning ? 'animate-pulse text-white' : 'text-amber-400'}`} />
+            <span>{isTanpuraRunning ? 'Tanpura: ON' : 'Tanpura Drone'}</span>
+          </button>
+
+          {/* First String Selector: Pa / Ma / Ni */}
+          <div className="flex items-center gap-1 text-xs bg-gray-900 border border-gray-800 rounded-xl px-2 py-1">
+            <span className="text-gray-400 font-medium text-[11px]">1st String:</span>
+            <select
+              value={tanpuraFirstString}
+              onChange={(e) => setTanpuraFirstString(e.target.value)}
+              className="bg-transparent font-bold text-amber-300 text-xs focus:outline-none"
+              title="First String Tuning (Pa, Ma, or Ni)"
+            >
+              <option value="Pa" className="bg-gray-900">Pa (Pancham)</option>
+              <option value="Ma" className="bg-gray-900">Ma (Madhyam)</option>
+              <option value="Ni" className="bg-gray-900">Ni (Nishad)</option>
+            </select>
+          </div>
+
+          {/* Tanpura String Animation Badges */}
+          <div className="hidden sm:flex items-center gap-1 text-[10px] font-mono">
+            {[
+              { idx: 0, label: tanpuraFirstString },
+              { idx: 1, label: 'Sa' },
+              { idx: 2, label: 'Sa' },
+              { idx: 3, label: 'Kharja' }
+            ].map((str) => {
+              const isPlucking = isTanpuraRunning && activePluckIndex === str.idx;
+              return (
+                <span
+                  key={str.idx}
+                  className={`px-2 py-0.5 rounded-md border transition-all ${
+                    isPlucking
+                      ? 'bg-amber-500 text-black font-bold border-amber-300 scale-105 shadow-sm shadow-amber-400/50'
+                      : 'bg-gray-900 text-gray-400 border-gray-800'
+                  }`}
+                >
+                  {str.label}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tanpura Drone Volume Slider */}
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setTanpuraVolume((v) => (v > 0 ? 0 : 45))}
+            className="text-gray-400 hover:text-amber-300 transition-colors"
+            title={tanpuraVolume === 0 ? "Unmute Drone" : "Mute Drone"}
+          >
+            {tanpuraVolume === 0 ? (
+              <VolumeX className="w-3.5 h-3.5 text-red-400" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+            )}
+          </button>
+          <span className="text-[11px] text-gray-400 font-medium hidden xs:inline">Drone:</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={tanpuraVolume}
+            onChange={(e) => setTanpuraVolume(Number(e.target.value))}
+            className="w-20 sm:w-28 h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+            title={`Tanpura Drone volume: ${tanpuraVolume}%`}
+          />
+          <span className="text-[11px] font-mono text-gray-300 w-7 text-right">{tanpuraVolume}%</span>
+        </div>
+      </div>
+
       {/* Telemetry Readout Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 bg-gray-950 border-b border-gray-800/80 shrink-0">
+        {/* Swara Card */}
         <div className="bg-gray-900/90 border border-gray-800 rounded-2xl px-3.5 py-2 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-              Sargam / Swara
+              Sargam Swara
             </span>
             <Volume2 className="w-3 h-3 text-gray-500" />
           </div>
@@ -686,6 +969,7 @@ export function PitchMonitorPage() {
           </div>
         </div>
 
+        {/* Western Note Card */}
         <div className="bg-gray-900/90 border border-gray-800 rounded-2xl px-3.5 py-2 flex flex-col justify-center">
           <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
             Western Note
@@ -695,6 +979,7 @@ export function PitchMonitorPage() {
           </div>
         </div>
 
+        {/* Frequency Card */}
         <div className="bg-gray-900/90 border border-gray-800 rounded-2xl px-3.5 py-2 flex flex-col justify-center">
           <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
             Frequency
@@ -705,6 +990,7 @@ export function PitchMonitorPage() {
           </div>
         </div>
 
+        {/* Intonation Cents Card */}
         <div className="bg-gray-900/90 border border-gray-800 rounded-2xl px-3.5 py-2 flex flex-col justify-center">
           <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
             Intonation (Cents)
@@ -727,24 +1013,25 @@ export function PitchMonitorPage() {
       <div className="relative flex-1 w-full overflow-hidden bg-gray-950">
         <canvas ref={canvasRef} className="block w-full h-full" />
 
+        {/* Hero Overlay before Mic is started */}
         {!isRunning && !isDemoRunning && (
           <div className="absolute inset-0 bg-gray-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-5 text-center z-10">
             <div className="w-12 h-12 rounded-2xl bg-purple-900/40 border border-purple-500/30 text-purple-400 flex items-center justify-center mb-3">
               <Mic className="w-6 h-6" />
             </div>
             <h2 className="text-base sm:text-lg font-bold text-white mb-1.5">
-              Vocal & Keyboard Pitch Monitor
+              Vocal & Instrument Swara Monitor
             </h2>
             <p className="text-xs sm:text-sm text-gray-400 max-w-md mb-5 leading-relaxed">
-              Captures raw uncompressed microphone audio with DSP filters disabled. Horizontal
-              lines snap to your selected <strong className="text-purple-300">Sa</strong> scale.
+              Captures raw audio to analyze your intonation. The grid aligns dynamically to your selected{' '}
+              <strong className="text-purple-300">{currentSaLabel}</strong> scale.
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={handleStartMic}
-                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold flex items-center gap-2 shadow-lg shadow-purple-600/30 transition-all"
+                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold flex items-center gap-2 shadow-lg shadow-purple-600/30 transition-all active:scale-95"
               >
                 <Mic className="w-4 h-4" />
                 Start Microphone
@@ -753,10 +1040,23 @@ export function PitchMonitorPage() {
               <button
                 type="button"
                 onClick={handleStartDemo}
-                className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-sm font-semibold flex items-center gap-2 transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-sm font-semibold flex items-center gap-2 transition-colors active:scale-95"
               >
                 <Play className="w-4 h-4 text-emerald-400" />
                 Test Demo Scale
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleTanpura}
+                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-2 transition-all active:scale-95 ${
+                  isTanpuraRunning
+                    ? 'bg-amber-600 text-white border-amber-500 shadow-md shadow-amber-600/30'
+                    : 'bg-gray-800 hover:bg-gray-750 text-amber-300 border-amber-500/40'
+                }`}
+              >
+                <Radio className="w-4 h-4" />
+                {isTanpuraRunning ? 'Stop Tanpura' : 'Play Tanpura Drone'}
               </button>
             </div>
 
@@ -768,12 +1068,13 @@ export function PitchMonitorPage() {
           </div>
         )}
 
+        {/* Demo Scale Synthesizer Running Notice */}
         {isDemoRunning && (
           <div className="absolute bottom-4 right-4 z-10">
             <button
               type="button"
               onClick={stopAllAudio}
-              className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg"
+              className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-600/30"
             >
               <Square className="w-3.5 h-3.5" />
               Stop Demo Scale

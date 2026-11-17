@@ -13,7 +13,7 @@ import {
   onSnapshot
 } from '../services/firebase';
 import { useAuth } from './AuthContext';
-import { playRingtone, stopRingtone } from '../services/ringtone';
+import { playRingtone, stopRingtone, unlockAudioContext } from '../services/ringtone';
 
 const CallContext = createContext(null);
 
@@ -44,6 +44,12 @@ export function CallProvider({ children }) {
         const callDoc = snapshot.docs[0];
         const data = callDoc.data();
         setIncomingCall({ id: callDoc.id, ...data });
+        unlockAudioContext();
+        try {
+          if (navigator.vibrate) {
+            navigator.vibrate([400, 200, 400, 200, 400]);
+          }
+        } catch (_) {}
         playRingtone();
       } else {
         setIncomingCall(null);

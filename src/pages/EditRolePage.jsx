@@ -141,6 +141,47 @@ export function EditRolePage() {
     }
   };
 
+  // Assign student to a teacher
+  const handleAssignTeacher = async (targetUser, newTeacherId) => {
+    setUpdatingUid(targetUser.id);
+    try {
+      const selectedTeacher = users.find(u => u.id === newTeacherId && u.role === 'teacher');
+      if (newTeacherId && !selectedTeacher) {
+        setFeedback({
+          type: 'error',
+          msg: 'Only users with the Teacher role can be assigned as instructors.'
+        });
+        return;
+      }
+      const teacherName = selectedTeacher ? (selectedTeacher.displayName || selectedTeacher.email || 'Teacher') : '';
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUser.id);
+      await updateDoc(userRef, {
+        teacherId: newTeacherId || '',
+        teacherName: teacherName || '',
+        teacherAssignedAt: new Date().toISOString()
+      });
+
+      setFeedback({
+        type: 'success',
+        msg: newTeacherId
+          ? `Assigned student "${targetUser.displayName || targetUser.email}" to teacher ${teacherName}.`
+          : `Removed teacher assignment from "${targetUser.displayName || targetUser.email}".`
+      });
+
+      setTimeout(() => {
+        setFeedback(null);
+      }, 4000);
+    } catch (err) {
+      console.error("Failed to assign teacher:", err);
+      setFeedback({
+        type: 'error',
+        msg: `Failed to assign teacher: ${err.message}`
+      });
+    } finally {
+      setUpdatingUid(null);
+    }
+  };
+
   // 1. Loading State
   if (authLoading) {
     return (
@@ -216,6 +257,7 @@ export function EditRolePage() {
   const adminCount = users.filter(u => u.role === 'admin').length;
   const teacherCount = users.filter(u => u.role === 'teacher').length;
   const studentCount = users.filter(u => u.role === 'student' || (!u.role && u.role !== 'admin' && u.role !== 'teacher')).length;
+  const availableTeachers = users.filter(u => u.role === 'teacher');
 
   const filteredUsers = users.filter(u => {
     const userRole = u.role || 'student';
@@ -375,7 +417,8 @@ export function EditRolePage() {
                   {/* <th className="py-3.5 px-4">Email / ID</th> */}
                   <th className="py-3.5 px-4">Details</th>
                   <th className="py-3.5 px-4">Current Role</th>
-                  <th className="py-3.5 px-4 text-right">Assign New Role</th>
+                  <th className="py-3.5 px-4">Assigned Teacher</th>
+                  <th className="py-3.5 px-4 text-right">Assign Role / Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
@@ -466,6 +509,47 @@ export function EditRolePage() {
                             <Music className="w-3 h-3" />
                             Student
                           </span>
+                        )}
+                      </td>
+
+                      {/* Assigned Teacher Column */}
+                      <td className="py-3.5 px-4">
+                        {currentRole === 'student' ? (
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={user.teacherId || ''}
+                              disabled={updatingUid === user.id}
+                              onChange={(e) => handleAssignTeacher(user, e.target.value)}
+                              className="bg-gray-950 border border-gray-700 hover:border-purple-500 focus:border-purple-500 text-gray-200 text-xs font-semibold rounded-xl px-2.5 py-1.5 outline-none transition-colors cursor-pointer max-w-[180px]"
+                              title="Assign teacher to this student"
+                            >
+                              <option value="">-- Unassigned --</option>
+                              {availableTeachers.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.displayName || t.email || 'Teacher'}
+                                </option>
+                              ))}
+                            </select>
+                            {user.teacherId && (
+                              <span className="text-[10px] text-emerald-400 font-bold" title={`Teacher: ${user.teacherName || 'Assigned'}`}>
+                                ✓
+                              </span>
+                            )}
+                          </div>
+                        ) : currentRole === 'teacher' ? (
+                          <div>
+                            {(() => {
+                              const studentCountForTeacher = users.filter(s => s.teacherId === user.id).length;
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-950/70 text-emerald-300 border border-emerald-800/40">
+                                  <Users className="w-3 h-3 text-emerald-400" />
+                                  {studentCountForTeacher} student{studentCountForTeacher === 1 ? '' : 's'} assigned
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 text-xs italic">Academy Admin</span>
                         )}
                       </td>
 
@@ -573,6 +657,37 @@ export function EditRolePage() {
                   <div className="flex items-center justify-between text-xs text-gray-400 pt-1">
                     <span>Instrument: <strong className="text-gray-300">{user.instrument || 'Vocals'}</strong></span>
                   </div>
+
+                  {/* Teacher Assignment for Students / Student Count for Teachers */}
+                  {currentRole === 'student' && (
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-800/50">
+                      <span className="text-xs font-semibold text-gray-400 flex items-center gap-1">
+                        <GraduationCap className="w-3.5 h-3.5 text-purple-400" />
+                        Teacher:
+                      </span>
+                      <select
+                        value={user.teacherId || ''}
+                        disabled={updatingUid === user.id}
+                        onChange={(e) => handleAssignTeacher(user, e.target.value)}
+                        className="bg-gray-950 border border-gray-700 hover:border-purple-500 text-gray-200 text-xs font-semibold rounded-xl px-2.5 py-1.5 outline-none max-w-[170px]"
+                      >
+                        <option value="">-- Unassigned --</option>
+                        {availableTeachers.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.displayName || t.email || 'Teacher'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {currentRole === 'teacher' && (
+                    <div className="flex items-center justify-between text-xs text-gray-400 pt-1 border-t border-gray-800/50">
+                      <span>Assigned Students:</span>
+                      <span className="font-semibold text-emerald-400">
+                        {users.filter(s => s.teacherId === user.id).length} students
+                      </span>
+                    </div>
+                  )}
 
                   {/* Mobile Role Switcher, Calling & Delete Actions */}
                   <div className="pt-2 border-t border-gray-800/80 flex flex-col gap-2">
