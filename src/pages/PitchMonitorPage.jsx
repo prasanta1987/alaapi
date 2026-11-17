@@ -47,7 +47,7 @@ export function PitchMonitorPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isDemoRunning, setIsDemoRunning] = useState(false);
   const [saOffset, setSaOffset] = useState(10); // Default A# / Bb (Kali 5)
-  const [sensitivity, setSensitivity] = useState('ultra');
+  const [sensitivity, setSensitivity] = useState('normal');
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [sampleRateLabel, setSampleRateLabel] = useState('Raw Studio Audio');
@@ -620,7 +620,7 @@ export function PitchMonitorPage() {
             ))}
           </select>
 
-          <div className="hidden md:flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2 py-1">
+          <div className="flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2 py-1">
             <Sliders className="w-3.5 h-3.5 text-gray-400 mr-1" />
             <select
               value={sensitivity}
