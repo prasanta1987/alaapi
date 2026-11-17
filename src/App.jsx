@@ -21,7 +21,7 @@ export function AppContent() {
   const location = useLocation();
 
   // Hide the Navbar when inside an active WebRTC call room
-  const isInCall = location.pathname.startsWith('/room/');
+  const isInCall = location.pathname.startsWith('/room/') || location.pathname === '/tuner';
 
   const handleOpenSettings = (tab = null) => {
     setDeviceSetupTab(tab);
