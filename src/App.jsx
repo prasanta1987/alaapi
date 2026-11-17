@@ -7,6 +7,7 @@ import { LobbyPage } from './pages/LobbyPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EditRolePage } from './pages/EditRolePage';
 import { CallStudioPage } from './pages/CallStudioPage';
+import { PitchMonitorPage } from './pages/PitchMonitorPage';
 import { IncomingCallModal } from './components/IncomingCallModal';
 import { OutgoingCallModal } from './components/OutgoingCallModal';
 import { ProfileModal } from './components/ProfileModal';
@@ -72,6 +73,9 @@ export function AppContent() {
                 />
               }
             />
+
+            <Route path="/tuner" element={<PitchMonitorPage />} />
+            
             <Route
               path="/dashboard"
               element={
