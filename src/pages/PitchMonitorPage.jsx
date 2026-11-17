@@ -36,10 +36,14 @@ const SA_OPTIONS = [
   { value: 11, label: 'Sa = B (Safed 7)' }
 ];
 
-const SENSITIVITY_THRESHOLDS = {
-  ultra: 0.0008,
-  high: 0.0025,
-  normal: 0.008
+// Sensitivity thresholds: mapped continuously from 0% to 100%
+// 0% (least sensitive, requires loud singing, rejects room noise): gate = 0.035
+// 100% (most sensitive, detects whisper-quiet singing/harmonics): gate = 0.0004
+const MIN_SENSITIVITY_GATE = 0.0004;
+const MAX_SENSITIVITY_GATE = 0.035;
+const getGateThreshold = (sensPct) => {
+  const s = Math.max(0, Math.min(100, Number(sensPct) ?? 75)) / 100;
+  return MAX_SENSITIVITY_GATE * Math.pow(MIN_SENSITIVITY_GATE / MAX_SENSITIVITY_GATE, s);
 };
 
 const MAX_POINTS = 360;
@@ -59,7 +63,18 @@ export function PitchMonitorPage() {
   const [activePluckIndex, setActivePluckIndex] = useState(-1); // 0..3 string index
 
   const [saOffset, setSaOffset] = useState(10); // Default A# / Bb (Kali 5)
-  const [sensitivity, setSensitivity] = useState('normal');
+  const [sensitivity, setSensitivity] = useState(() => {
+    try {
+      const saved = localStorage.getItem('alaapi_tuner_sensitivity');
+      if (saved !== null) {
+        const val = Number(saved);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    } catch {
+      // ignore
+    }
+    return 75; // Default 75% sensitivity
+  });
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [sampleRateLabel, setSampleRateLabel] = useState('Raw Studio Audio');
@@ -113,6 +128,11 @@ export function PitchMonitorPage() {
 
   useEffect(() => {
     sensitivityRef.current = sensitivity;
+    try {
+      localStorage.setItem('alaapi_tuner_sensitivity', String(sensitivity));
+    } catch {
+      // ignore
+    }
   }, [sensitivity]);
 
   // Enumerate Microphones
@@ -145,7 +165,7 @@ export function PitchMonitorPage() {
     }
     rms = Math.sqrt(rms / SIZE);
 
-    const gate = SENSITIVITY_THRESHOLDS[sensitivityRef.current] ?? 0.0008;
+    const gate = getGateThreshold(sensitivityRef.current);
     if (rms < gate || peak === 0) {
       return { freq: -1, rms };
     }
@@ -813,19 +833,28 @@ export function PitchMonitorPage() {
             ))}
           </select>
 
-          {/* Sensitivity */}
-          <div className="flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2 py-1">
-            <Sliders className="w-3.5 h-3.5 text-gray-400 mr-1" />
-            <select
+          {/* Sensitivity Slider (0% - 100%) */}
+          <div
+            className="flex items-center gap-1.5 sm:gap-2 bg-gray-900 border border-gray-700 rounded-xl px-2.5 py-1.5"
+            title={`Mic Sensitivity: ${sensitivity}% (0% = high gate / loud voice, 100% = ultra-sensitive / quiet whisper)`}
+          >
+            <Sliders className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span className="text-[11px] font-semibold text-gray-400 shrink-0 hidden xs:inline">
+              Sens:
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
               value={sensitivity}
-              onChange={(e) => setSensitivity(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-gray-200 focus:outline-none"
-              title="Mic Sensitivity Gate"
-            >
-              <option value="ultra" className="bg-gray-900">Sens: Ultra</option>
-              <option value="high" className="bg-gray-900">Sens: High</option>
-              <option value="normal" className="bg-gray-900">Sens: Normal</option>
-            </select>
+              onChange={(e) => setSensitivity(Number(e.target.value))}
+              className="w-16 sm:w-24 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              title={`Sensitivity: ${sensitivity}%`}
+            />
+            <span className="text-[11px] font-mono font-bold text-purple-300 w-8 text-right shrink-0">
+              {sensitivity}%
+            </span>
           </div>
 
           {/* Clear Graph Button */}

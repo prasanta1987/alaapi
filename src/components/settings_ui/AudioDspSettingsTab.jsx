@@ -52,8 +52,8 @@ export function AudioDspSettingsTab({ onSaved }) {
     } else {
       const speechDefaults = {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
         highpassFilter: true
       };
       setVoiceDsp(speechDefaults);
@@ -153,11 +153,10 @@ export function AudioDspSettingsTab({ onSaved }) {
         <button
           type="button"
           onClick={() => setProfileMode('music')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-            profileMode === 'music'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30'
-              : 'text-gray-400 hover:text-white hover:bg-gray-900/50'
-          }`}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${profileMode === 'music'
+            ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30'
+            : 'text-gray-400 hover:text-white hover:bg-gray-900/50'
+            }`}
         >
           <Music className="w-4 h-4" />
           <span>Video & Music Lessons</span>
@@ -165,11 +164,10 @@ export function AudioDspSettingsTab({ onSaved }) {
         <button
           type="button"
           onClick={() => setProfileMode('voice')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-            profileMode === 'voice'
-              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
-              : 'text-gray-400 hover:text-white hover:bg-gray-900/50'
-          }`}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${profileMode === 'voice'
+            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+            : 'text-gray-400 hover:text-white hover:bg-gray-900/50'
+            }`}
         >
           <Phone className="w-4 h-4" />
           <span>Voice / Audio Calls</span>
@@ -215,16 +213,14 @@ export function AudioDspSettingsTab({ onSaved }) {
             >
               <div className="space-y-1 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs font-semibold text-gray-200 transition-colors ${
-                    profileMode === 'voice' ? 'group-hover:text-emerald-300' : 'group-hover:text-purple-300'
-                  }`}>
+                  <span className={`text-xs font-semibold text-gray-200 transition-colors ${profileMode === 'voice' ? 'group-hover:text-emerald-300' : 'group-hover:text-purple-300'
+                    }`}>
                     {item.title}
                   </span>
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
-                    profileMode === 'voice'
-                      ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/40'
-                      : 'bg-gray-800 text-gray-400 border-gray-700'
-                  }`}>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${profileMode === 'voice'
+                    ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/40'
+                    : 'bg-gray-800 text-gray-400 border-gray-700'
+                    }`}>
                     {item.recommendation}
                   </span>
                 </div>
@@ -236,18 +232,16 @@ export function AudioDspSettingsTab({ onSaved }) {
               {/* Smooth Toggle Switch */}
               <div className="shrink-0">
                 <div
-                  className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                    isEnabled
-                      ? profileMode === 'voice'
-                        ? 'bg-emerald-600'
-                        : 'bg-purple-600'
-                      : 'bg-gray-800 border border-gray-700'
-                  }`}
+                  className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${isEnabled
+                    ? profileMode === 'voice'
+                      ? 'bg-emerald-600'
+                      : 'bg-purple-600'
+                    : 'bg-gray-800 border border-gray-700'
+                    }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-full bg-white transition-transform shadow-md ${
-                      isEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
+                    className={`w-5 h-5 rounded-full bg-white transition-transform shadow-md ${isEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
                   />
                 </div>
               </div>
@@ -274,11 +268,10 @@ export function AudioDspSettingsTab({ onSaved }) {
         <button
           type="button"
           onClick={handleSave}
-          className={`w-full sm:w-auto px-6 py-2.5 text-white rounded-xl text-xs font-semibold shadow-lg transition-all flex items-center justify-center gap-2 ${
-            profileMode === 'voice'
-              ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/30'
-              : 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/30'
-          }`}
+          className={`w-full sm:w-auto px-6 py-2.5 text-white rounded-xl text-xs font-semibold shadow-lg transition-all flex items-center justify-center gap-2 ${profileMode === 'voice'
+            ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/30'
+            : 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/30'
+            }`}
         >
           <Check className="w-4 h-4" />
           <span>Save {profileMode === 'music' ? 'Music' : 'Voice Call'} Settings</span>
