@@ -38,10 +38,10 @@ service cloud.firestore {
 
         // Profile updates:
         // - Owners can update their profile (heartbeat, online status, bio, instrument, phone, etc.)
-        //   Owners cannot alter their own 'role' unless already an Admin.
-        // - Admins can update any user's profile and assign roles (teacher, student, admin)
+        //   Owners cannot alter their own 'role', 'teacherId', 'teacherName', or 'teacherAssignedAt' unless an Admin.
+        // - Admins can update any user's profile and assign roles/teachers
         allow update: if (
-          (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin(appId))) ||
+          (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'teacherId', 'teacherName', 'teacherAssignedAt']) || isAdmin(appId))) ||
           isAdmin(appId)
         );
 
@@ -80,7 +80,8 @@ service cloud.firestore {
       match /rooms/{roomId} {
         // Publicly accessible for WebRTC peer signaling so students and guests
         // can join instant sessions with 6-digit room IDs without login barriers.
-        allow read, write: if true;
+        allow read, create, update: if true;
+        allow delete: if isAuthenticated();
       }
     }
   }

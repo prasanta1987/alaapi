@@ -46,42 +46,13 @@ export function AppContent() {
     }
   }, [location.search]);
 
-  // Ghost touch simulation on Android / mobile on page visit to warm up browser user gesture state & unlock audio for incoming calls
+  // Warm up audio context on page visit and capture first user gesture to unlock audio playback for incoming calls
   useEffect(() => {
-    const performGhostTouch = () => {
-      try {
-        unlockAudioContext();
-        if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-          const target = document.body || document.documentElement;
-          try {
-            if (typeof Touch !== 'undefined' && typeof TouchEvent !== 'undefined') {
-              const touch = new Touch({
-                identifier: Date.now(),
-                target,
-                clientX: 20,
-                clientY: 20,
-                radiusX: 2.5,
-                radiusY: 2.5,
-                rotationAngle: 0,
-                force: 0.5
-              });
-              target.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [touch] }));
-              target.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [] }));
-            }
-          } catch (_) {}
-
-          try {
-            target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
-            target.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
-            target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: 20, clientY: 20 }));
-          } catch (_) {}
-        }
-      } catch (err) {
-        console.warn("Ghost touch initialization skipped:", err);
-      }
-    };
-
-    performGhostTouch();
+    try {
+      unlockAudioContext();
+    } catch (err) {
+      console.warn("Audio unlock initialization skipped:", err);
+    }
 
     const handleFirstInteraction = () => {
       unlockAudioContext();

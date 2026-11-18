@@ -153,7 +153,13 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const handleRoleChange = async (targetUid, newRole) => {
     try {
       const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUid);
-      await updateDoc(userRef, { role: newRole });
+      const updatePayload = { role: newRole };
+      if (newRole !== 'student') {
+        updatePayload.teacherId = '';
+        updatePayload.teacherName = '';
+        updatePayload.teacherAssignedAt = '';
+      }
+      await updateDoc(userRef, updatePayload);
       setRoleUpdateMsg(`Role updated to ${newRole} successfully.`);
       setTimeout(() => setRoleUpdateMsg(''), 3000);
     } catch (err) {
@@ -352,36 +358,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         </div>
       </div>
 
-      {/* Admin Gateway to /editroll */}
-      {/* Only enable for ADMIN. Currently disabled (false) for testing. */}
-      {(isAdmin && false) && (
-        <div className="bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-gray-900 border border-purple-500/50 rounded-3xl p-5 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300 shrink-0">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                User Role Administration
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-700/50">
-                  /editroll
-                </span>
-              </h3>
-              <p className="text-xs text-gray-300 mt-0.5">
-                Manage roles (Admin, Teacher, Student) and permissions for all users in the academy.
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/editroll"
-            className="py-2.5 px-5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-semibold text-xs whitespace-nowrap shadow-lg shadow-purple-900/40 transition-all flex items-center gap-2"
-          >
-            <Shield className="w-4 h-4" />
-            Open Role Manager (/editroll)
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      )}
+
 
       {/* 1. ADMIN DIRECTORY: CAN CALL ANYONE (STUDENTS & TEACHERS) */}
       {isAdmin ? (
@@ -970,128 +947,6 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         </section>
       )}
 
-      {/* 4. ADMIN VIEW: COMPLETE USER ROLE MANAGEMENT TABLE */}
-      {/* Only enable for ADMIN. Currently disabled (false) for testing. */}
-      {(isAdmin && false) && (
-        <section className="bg-gray-900/90 border border-purple-900/50 rounded-3xl p-5 sm:p-7 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Shield className="w-5 h-5 text-purple-400" />
-                Admin: User Role Management
-              </h3>
-              <p className="text-xs text-gray-400">
-                Manage roles and initiate calls directly from the administration table.
-              </p>
-            </div>
-            <span className="text-xs font-mono text-purple-400 bg-purple-950/80 px-2.5 py-1 rounded-lg border border-purple-700/50">
-              Total Users: {allUsers.length}
-            </span>
-          </div>
-
-          {loadingUsers ? (
-            <p className="text-center py-6 text-gray-500 text-xs">Loading user database...</p>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-gray-800">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-gray-950/90 border-b border-gray-800 text-gray-400 uppercase font-semibold">
-                    <th className="p-3.5">User</th>
-                    <th className="p-3.5">Status</th>
-                    {/* <th className="p-3.5">Email</th> */}
-                    <th className="p-3.5">Role</th>
-                    <th className="p-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800/60 bg-gray-900/50">
-                  {allUsers.map(user => {
-                    const online = isUserOnline(user);
-                    return (
-                      <tr key={user.id} className="hover:bg-gray-800/40 transition-colors">
-                        <td className="p-3.5 flex items-center gap-2.5">
-                          <UserAvatar
-                            photoURL={user.photoURL}
-                            name={user.displayName}
-                            size="xs"
-                          />
-                          <span className="font-semibold text-gray-200">
-                            {user.displayName || 'Vocalist'}
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${online
-                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                              : 'bg-gray-900 text-gray-400 border-gray-700'
-                              }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                                }`}
-                            />
-                            {online ? 'Online' : 'Offline'}
-                          </span>
-                        </td>
-                        {/* <td className="p-3.5 text-gray-400 font-mono text-[11px]">{user.email || 'N/A'}</td> */}
-                        <td className="p-3.5">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${user.role === 'admin'
-                            ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                            : user.role === 'teacher'
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                              : 'bg-blue-950 text-blue-300 border border-blue-800'
-                            }`}>
-                            {user.role || 'student'}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-right">
-                          <div className="inline-flex items-center justify-end gap-2">
-                            {user.id !== currentUser.uid && online && (
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  onClick={() => initiateDirectCall(user, 'video')}
-                                  className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all"
-                                  title={`Video Call ${user.displayName || 'User'}`}
-                                >
-                                  <Video className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => initiateDirectCall(user, 'audio')}
-                                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all"
-                                  title={`Audio Call ${user.displayName || 'User'}`}
-                                >
-                                  <Phone className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                            <select
-                              value={user.role || 'student'}
-                              onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                              className="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
-                            >
-                              <option value="student">Student</option>
-                              <option value="teacher">Teacher</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                            {isAdmin && user.role !== 'admin' && user.id !== currentUser.uid && (
-                              <button
-                                onClick={() => handleDeleteUser(user)}
-                                title={`Delete ${user.displayName || 'User'}`}
-                                className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }

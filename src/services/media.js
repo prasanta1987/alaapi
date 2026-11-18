@@ -42,25 +42,29 @@ export function savePreferredDevices(devices) {
 
 // Default DSP Settings for Music & Vocal Classes:
 // Echo Cancellation OFF (stereo 48kHz lossless when using headphones)
+export const DEFAULT_MUSIC_DSP = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+  highpassFilter: false
+};
+
 export function loadStoredAudioSettings() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_AUDIO_DSP);
     if (stored) {
       const parsed = JSON.parse(stored);
       return {
-        echoCancellation: Boolean(parsed.echoCancellation),
-        noiseSuppression: Boolean(parsed.noiseSuppression),
-        autoGainControl: Boolean(parsed.autoGainControl)
+        echoCancellation: typeof parsed.echoCancellation === 'boolean' ? parsed.echoCancellation : DEFAULT_MUSIC_DSP.echoCancellation,
+        noiseSuppression: typeof parsed.noiseSuppression === 'boolean' ? parsed.noiseSuppression : DEFAULT_MUSIC_DSP.noiseSuppression,
+        autoGainControl: typeof parsed.autoGainControl === 'boolean' ? parsed.autoGainControl : DEFAULT_MUSIC_DSP.autoGainControl,
+        highpassFilter: typeof parsed.highpassFilter === 'boolean' ? parsed.highpassFilter : DEFAULT_MUSIC_DSP.highpassFilter
       };
     }
   } catch (e) {
     console.warn("Could not read audio DSP settings from localStorage:", e);
   }
-  return {
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false
-  };
+  return { ...DEFAULT_MUSIC_DSP };
 }
 
 export let audioSettings = loadStoredAudioSettings();
@@ -80,7 +84,16 @@ export function saveAudioSettings(newSettings) {
   return { ...audioSettings };
 }
 
-export const STORAGE_KEY_VOICE_CALL_DSP = 'alaapi_voice_call_dsp_settings_v1';
+// Default DSP Settings for Voice / Phone Calls:
+// AEC: ON, Noise Suppression: OFF, AGC: OFF, Highpass: ON (matching AudioDspSettingsTab defaults)
+export const DEFAULT_SPEECH_DSP = {
+  echoCancellation: true,
+  noiseSuppression: false,
+  autoGainControl: false,
+  highpassFilter: false
+};
+
+export const STORAGE_KEY_VOICE_CALL_DSP = 'alaapi_voice_call_dsp_settings_v2';
 
 export function loadStoredVoiceCallAudioSettings() {
   try {
@@ -88,21 +101,16 @@ export function loadStoredVoiceCallAudioSettings() {
     if (stored) {
       const parsed = JSON.parse(stored);
       return {
-        echoCancellation: parsed.echoCancellation !== false,
-        noiseSuppression: parsed.noiseSuppression !== false,
-        autoGainControl: parsed.autoGainControl !== false,
-        highpassFilter: Boolean(parsed.highpassFilter)
+        echoCancellation: typeof parsed.echoCancellation === 'boolean' ? parsed.echoCancellation : DEFAULT_SPEECH_DSP.echoCancellation,
+        noiseSuppression: typeof parsed.noiseSuppression === 'boolean' ? parsed.noiseSuppression : DEFAULT_SPEECH_DSP.noiseSuppression,
+        autoGainControl: typeof parsed.autoGainControl === 'boolean' ? parsed.autoGainControl : DEFAULT_SPEECH_DSP.autoGainControl,
+        highpassFilter: typeof parsed.highpassFilter === 'boolean' ? parsed.highpassFilter : DEFAULT_SPEECH_DSP.highpassFilter
       };
     }
   } catch (e) {
     console.warn("Could not read voice call audio DSP settings from localStorage:", e);
   }
-  return {
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
-    highpassFilter: true
-  };
+  return { ...DEFAULT_SPEECH_DSP };
 }
 
 export let voiceCallAudioSettings = loadStoredVoiceCallAudioSettings();
@@ -136,7 +144,7 @@ export function isVoiceCallModeActive() {
 export function buildAudioConstraints(deviceId = null, isVoiceCall = isCurrentVoiceCall) {
   // Pull from voice call specific settings if in voice call, otherwise user's studio music settings
   const current = isVoiceCall ? getVoiceCallAudioSettings() : getAudioSettings();
-  
+
   const isEchoCancel = Boolean(current.echoCancellation);
   const isNoiseSuppress = Boolean(current.noiseSuppression);
   const isAutoGain = Boolean(current.autoGainControl);
@@ -591,7 +599,7 @@ if (typeof document !== 'undefined' && !wakeLockVisibilityAttached) {
   wakeLockVisibilityAttached = true;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && shouldKeepAwake) {
-      requestScreenWakeLock().catch(() => {});
+      requestScreenWakeLock().catch(() => { });
     }
   });
 }

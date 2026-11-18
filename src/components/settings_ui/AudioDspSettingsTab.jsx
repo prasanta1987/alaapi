@@ -3,7 +3,9 @@ import {
   getAudioSettings,
   saveAudioSettings,
   getVoiceCallAudioSettings,
-  saveVoiceCallAudioSettings
+  saveVoiceCallAudioSettings,
+  DEFAULT_MUSIC_DSP,
+  DEFAULT_SPEECH_DSP
 } from '../../services/media';
 import {
   Sliders,
@@ -41,23 +43,11 @@ export function AudioDspSettingsTab({ onSaved }) {
   // Reset to defaults based on mode
   const handleResetDefaults = () => {
     if (profileMode === 'music') {
-      const rawMusicDefaults = {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        highpassFilter: false
-      };
-      setMusicDsp(rawMusicDefaults);
-      saveAudioSettings(rawMusicDefaults);
+      setMusicDsp({ ...DEFAULT_MUSIC_DSP });
+      saveAudioSettings({ ...DEFAULT_MUSIC_DSP });
     } else {
-      const speechDefaults = {
-        echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false,
-        highpassFilter: true
-      };
-      setVoiceDsp(speechDefaults);
-      saveVoiceCallAudioSettings(speechDefaults);
+      setVoiceDsp({ ...DEFAULT_SPEECH_DSP });
+      saveVoiceCallAudioSettings({ ...DEFAULT_SPEECH_DSP });
     }
     setSaveSuccess(true);
     if (onSaved) onSaved();
@@ -115,13 +105,13 @@ export function AudioDspSettingsTab({ onSaved }) {
     {
       key: 'noiseSuppression',
       title: 'Noise Suppression Filter',
-      recommendation: 'Recommended ON for Speech Clarity',
+      recommendation: 'Default OFF (Optional for Speech Clarity)',
       description: 'Suppresses room background hiss, traffic, and fan noise so spoken dialogue is clean and easy to understand.'
     },
     {
       key: 'autoGainControl',
       title: 'Automatic Gain Control (AGC)',
-      recommendation: 'Recommended ON for Balanced Talking Volume',
+      recommendation: 'Default OFF (Optional for Leveling)',
       description: 'Automatically regulates microphone sensitivity so you can speak at varying distances from your device without getting too quiet or distorted.'
     },
     {

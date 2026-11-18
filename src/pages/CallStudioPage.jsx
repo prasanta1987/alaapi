@@ -24,7 +24,9 @@ import {
   releaseScreenWakeLock,
   setupOrientationListeners,
   updateOrientationClasses,
-  getPreferredDevices
+  getPreferredDevices,
+  setVoiceCallMode,
+  buildAudioConstraints
 } from '../services/media';
 import {
   initPeerConnection,
@@ -417,8 +419,13 @@ export function CallStudioPage() {
         }
       }
 
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.removeEventListener === 'function') {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      }
+
       closePeerConnection();
       stopLocalMedia(localVideoRef.current);
+      setVoiceCallMode(false);
       releaseScreenWakeLock();
 
       if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended") || message.includes("No answer"))) {
@@ -438,6 +445,31 @@ export function CallStudioPage() {
           discardCallSession(`${calleeName || 'Student'} is unavailable or declined the call.`, true);
         }
       });
+    }
+
+    // USB / Headset Hot-Plug Recovery Listener
+    const handleDeviceChange = async () => {
+      if (isTerminated) return;
+      try {
+        const audioTracks = localStream ? localStream.getAudioTracks() : [];
+        const hasEndedAudio = audioTracks.some(t => t.readyState === 'ended');
+        const preferred = getPreferredDevices();
+        if (hasEndedAudio || preferred.micId) {
+          await handleDeviceSwitch({
+            selectedMicId: preferred.micId || '',
+            localVideo: isAudioOnly ? null : localVideoRef.current,
+            pc,
+            audioOnly: isAudioOnly
+          });
+          if (localStream) setActiveAudioStream(localStream);
+        }
+      } catch (e) {
+        console.warn("Hot-plug recovery warning:", e);
+      }
+    };
+
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
     }
 
     const startCall = async () => {
@@ -569,28 +601,7 @@ export function CallStudioPage() {
           }, 45000);
         }
 
-        // USB / Headset Hot-Plug Recovery Listener
-        const handleDeviceChange = async () => {
-          try {
-            const audioTracks = localStream ? localStream.getAudioTracks() : [];
-            const hasEndedAudio = audioTracks.some(t => t.readyState === 'ended');
-            const preferred = getPreferredDevices();
-            if (hasEndedAudio || preferred.micId) {
-              await handleDeviceSwitch({
-                selectedMicId: preferred.micId || '',
-                localVideo: localVideoRef.current,
-                pc
-              });
-              if (localStream) setActiveAudioStream(localStream);
-            }
-          } catch (e) {
-            console.warn("Hot-plug recovery warning:", e);
-          }
-        };
 
-        if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
-          navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
-        }
 
         if (isCaller) {
           setStatusText(
@@ -638,10 +649,6 @@ export function CallStudioPage() {
               setCallType(data.callType);
             }
 
-            if (data.callType && data.callType !== callType) {
-              setCallType(data.callType);
-            }
-
             if (typeof data.calleeMirrored === 'boolean') {
               setIsRemoteMirrored(data.calleeMirrored);
             }
@@ -651,7 +658,7 @@ export function CallStudioPage() {
               lastAppliedAnswerSdp.current = data.answer.sdp;
               const answerDesc = new RTCSessionDescription(data.answer);
               await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
-              await optimizeAudioSenders(pc);
+              await optimizeAudioSenders(pc, isAudioOnly);
               setStatusText("Participant joined! Connecting...");
 
               if (unansweredTimeoutRef.current) {
@@ -685,6 +692,26 @@ export function CallStudioPage() {
 
             if (data.callType && data.callType !== callType) {
               setCallType(data.callType);
+              if (data.callType === 'audio') {
+                setVoiceCallMode(true);
+                setHasLocalVideo(false);
+                setIsVideoOff(true);
+                if (localStream) {
+                  localStream.getVideoTracks().forEach(track => {
+                    track.stop();
+                    localStream.removeTrack(track);
+                  });
+                  const audioTrack = localStream.getAudioTracks()[0];
+                  if (audioTrack && typeof audioTrack.applyConstraints === 'function') {
+                    audioTrack.applyConstraints(buildAudioConstraints(null, true)).catch(e => {
+                      console.warn("Could not apply speech constraints to audio track:", e);
+                    });
+                  }
+                }
+                if (localVideoRef.current) {
+                  localVideoRef.current.srcObject = null;
+                }
+              }
             }
 
             // When host's offer is populated and differs from last answered offer
@@ -696,14 +723,15 @@ export function CallStudioPage() {
                 const offerDesc = new RTCSessionDescription(data.offer);
                 await pc.setRemoteDescription(offerDesc);
 
+                const effectiveAudioOnly = isAudioOnly || data.callType === 'audio';
                 const answer = await pc.createAnswer();
-                const sdp = isAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
+                const sdp = effectiveAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
                 const rtcAnswer = new RTCSessionDescription({
                   type: answer.type,
                   sdp
                 });
                 await pc.setLocalDescription(rtcAnswer);
-                await optimizeAudioSenders(pc, isAudioOnly);
+                await optimizeAudioSenders(pc, effectiveAudioOnly);
 
                 await updateDoc(roomRef, {
                   answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
@@ -714,7 +742,7 @@ export function CallStudioPage() {
                   } : null
                 });
 
-                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+                setStatusText(effectiveAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
               } catch (err) {
                 console.error("Callee answer failed:", err);
                 discardCallSession("Failed to establish audio/video stream.", false);
@@ -756,6 +784,9 @@ export function CallStudioPage() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.removeEventListener === 'function') {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      }
       discardCallSession("Session closed.", true);
     };
   }, [roomId, isCaller, currentUser, navigate]);
@@ -777,6 +808,7 @@ export function CallStudioPage() {
     }
     closePeerConnection();
     stopLocalMedia(localVideoRef.current);
+    setVoiceCallMode(false);
     releaseScreenWakeLock();
     navigate(currentUser ? '/dashboard' : '/', { replace: true });
   };
@@ -789,13 +821,14 @@ export function CallStudioPage() {
 
   // Toggle Video
   const handleVideoToggle = () => {
+    if (isAudioOnly) return;
     const stopped = toggleVideoFeed();
     setIsVideoOff(stopped);
   };
 
   // Switch camera: toggles between front and back camera on mobile or cycles webcams on desktop
   const handleFlipCamera = async () => {
-    if (!hasLocalVideo) return;
+    if (isAudioOnly || !hasLocalVideo) return;
 
     const isMobile = isMobileDevice();
 

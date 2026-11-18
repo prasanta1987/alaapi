@@ -117,10 +117,16 @@ export function EditRolePage() {
     setUpdatingUid(targetUser.id);
     try {
       const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUser.id);
-      await updateDoc(userRef, {
+      const updatePayload = {
         role: newRole,
         roleUpdatedAt: new Date().toISOString()
-      });
+      };
+      if (newRole !== 'student') {
+        updatePayload.teacherId = '';
+        updatePayload.teacherName = '';
+        updatePayload.teacherAssignedAt = '';
+      }
+      await updateDoc(userRef, updatePayload);
 
       setFeedback({
         type: 'success',
