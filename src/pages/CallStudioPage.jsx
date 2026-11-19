@@ -127,9 +127,16 @@ export function CallStudioPage() {
   const effectiveIsCallerRef = useRef(isCaller);
   const myPeerId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 7)}`).current;
   const heartbeatIntervalRef = useRef(null);
+  const isSharingOrBackgroundRef = useRef(false);
 
   // Safe WhatsApp & Native Link Sharing
   const handleShareRoomLink = async () => {
+    isSharingOrBackgroundRef.current = true;
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
+
     const shareUrl = `${window.location.origin}/room/${roomId}`;
     const shareText = `Join my live music session on Alaapi: ${shareUrl}`;
     if (navigator.share) {
@@ -146,24 +153,106 @@ export function CallStudioPage() {
         } else {
           return;
         }
+      } finally {
+        setTimeout(() => {
+          isSharingOrBackgroundRef.current = false;
+        }, 5000);
       }
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+    setTimeout(() => {
+      isSharingOrBackgroundRef.current = false;
+    }, 5000);
   };
 
-  // Return-from-background revival (WhatsApp link sharing recovery)
+  // Return-from-background revival (WhatsApp link sharing recovery & track health)
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
+        isSharingOrBackgroundRef.current = false;
+
+        // Clear any disconnect timer triggered while in background
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current);
+          disconnectTimerRef.current = null;
+        }
+
         requestScreenWakeLock().catch(() => {});
+
+        // Revive local video playback
         if (localVideoRef.current && localVideoRef.current.paused) {
           localVideoRef.current.play().catch(() => {});
         }
+
+        // Check if Android OS killed local hardware tracks while WhatsApp was foregrounded
+        if (localStream) {
+          const vTracks = localStream.getVideoTracks();
+          const hasDeadVideo = !isAudioOnly && (vTracks.length === 0 || vTracks.some(t => t.readyState === 'ended'));
+          const aTracks = localStream.getAudioTracks();
+          const hasDeadAudio = aTracks.length === 0 || aTracks.some(t => t.readyState === 'ended');
+
+          if (hasDeadVideo || hasDeadAudio) {
+            console.log("[Media] Hardware tracks ended in background, re-acquiring...");
+            try {
+              const preferred = getPreferredDevices();
+              await handleDeviceSwitch({
+                selectedCamId: preferred.cameraId || '',
+                selectedMicId: preferred.micId || '',
+                localVideo: isAudioOnly ? null : localVideoRef.current,
+                pc,
+                audioOnly: isAudioOnly
+              });
+              if (localStream) setActiveAudioStream(localStream);
+            } catch (e) {
+              console.warn("Could not re-acquire hardware after background:", e);
+            }
+          }
+        }
+
+        // In Open Room: ensure presence heartbeat is active and send immediate pulse
         if (isOpenRoomRef.current && roomId && myPeerId) {
           const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
           updateDoc(roomRef, {
             [`peers.${myPeerId}`]: Date.now()
           }).catch(() => {});
+
+          if (!heartbeatIntervalRef.current) {
+            heartbeatIntervalRef.current = setInterval(() => {
+              if (isTerminated || isLeavingRef.current) return;
+              updateDoc(roomRef, {
+                [`peers.${myPeerId}`]: Date.now()
+              }).catch(() => {});
+            }, 15000);
+          }
+
+          // If WebRTC is active and was interrupted while backgrounded, trigger automatic ICE recovery
+          if (webrtcStartedRef.current && pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+            try {
+              console.log("[WebRTC] Triggering ICE restart after returning from background...");
+              if (typeof pc.restartIce === 'function') {
+                pc.restartIce();
+              }
+              if (effectiveIsCallerRef.current) {
+                const offer = await pc.createOffer({ iceRestart: true });
+                const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+                const rtcOffer = new RTCSessionDescription({ type: offer.type, sdp });
+                await pc.setLocalDescription(rtcOffer);
+                await optimizeAudioSenders(pc, isAudioOnly);
+                await updateDoc(roomRef, {
+                  offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
+                  answer: null
+                });
+              }
+            } catch (err) {
+              console.warn("ICE restart recovery failed:", err);
+            }
+          }
+        }
+      } else {
+        // When tab is hidden in background, cancel disconnect timer so backgrounding never kills session
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current);
+          disconnectTimerRef.current = null;
         }
       }
     };
@@ -172,7 +261,7 @@ export function CallStudioPage() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [roomId, myPeerId]);
+  }, [roomId, myPeerId, isAudioOnly]);
 
   // Auto-dismiss volume popover on tap outside
   useEffect(() => {
@@ -640,11 +729,13 @@ export function CallStudioPage() {
                 setIsReconnecting(true);
                 setStatusText("Network interruption... Reconnecting...");
 
-                // 14-second hard disconnect limit
-                if (!disconnectTimerRef.current) {
+                // Graceful disconnect limit (only if tab is visible and not sharing)
+                if (!disconnectTimerRef.current && document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
                   disconnectTimerRef.current = setTimeout(() => {
-                    discardCallSession("Connection lost.", true);
-                  }, 14000);
+                    if (document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
+                      discardCallSession("Connection lost.", true);
+                    }
+                  }, 25000);
                 }
 
                 // Automatic ICE restart by caller after 2.5s grace period
@@ -987,10 +1078,13 @@ export function CallStudioPage() {
                     setIsReconnecting(true);
                     setStatusText("Network interruption... Reconnecting...");
 
-                    if (!disconnectTimerRef.current) {
+                    // Graceful disconnect limit (only if tab is visible and not sharing)
+                    if (!disconnectTimerRef.current && document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
                       disconnectTimerRef.current = setTimeout(() => {
-                        discardCallSession("Connection lost.", false);
-                      }, 14000);
+                        if (document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
+                          discardCallSession("Connection lost.", false);
+                        }
+                      }, 25000);
                     }
 
                     if (effectiveIsCaller && !iceRestartTimerRef.current) {
@@ -1087,25 +1181,9 @@ export function CallStudioPage() {
     startCall();
 
     const handleBeforeUnload = () => {
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
-      }
-      if (roomId) {
-        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-        if (isOpenRoomRef.current) {
-          updateDoc(roomRef, {
-            [`peers.${myPeerId}`]: deleteField(),
-            offer: null,
-            answer: null,
-            callerCandidates: [],
-            calleeCandidates: []
-          }).catch(() => {});
-        } else {
-          deleteDoc(roomRef).catch(() => {});
-        }
-      }
-      if (callId) {
+      // Note: On mobile devices, switching apps or sharing via WhatsApp triggers beforeunload/pagehide.
+      // We must NOT wipe open rooms, peers, or stop the heartbeat here so link sharing never destroys the session.
+      if (!isOpenRoomRef.current && callId) {
         const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
         deleteDoc(callRef).catch(() => {});
       }
