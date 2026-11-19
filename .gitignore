@@ -80,3 +80,6 @@ public/index.html
 
 # dataconnect generated files
 .dataconnect
+
+# firestore
+firestore.rules
