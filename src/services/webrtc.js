@@ -11,6 +11,7 @@ export const rtcServers = {
 export let pc = null;
 export let dataChannel = null;
 export let processedCandidates = new Set();
+export let pendingRemoteCandidates = [];
 
 let isPeerCaller = false;
 let calleeMinusCallerSkew = 0; // Difference: Callee_Clock - Caller_Clock
@@ -239,6 +240,33 @@ export function initPeerConnection({
 export function processRemoteCandidates(candidateList) {
   if (!pc || !candidateList) return;
 
+  // WebRTC requirement: Candidates cannot be added before setRemoteDescription
+  if (!pc.remoteDescription || !pc.remoteDescription.type) {
+    candidateList.forEach(candStr => {
+      if (!processedCandidates.has(candStr) && !pendingRemoteCandidates.includes(candStr)) {
+        pendingRemoteCandidates.push(candStr);
+      }
+    });
+    return;
+  }
+
+  // Flush any previously queued candidates
+  if (pendingRemoteCandidates.length > 0) {
+    const queued = [...pendingRemoteCandidates];
+    pendingRemoteCandidates = [];
+    queued.forEach(candStr => {
+      if (!processedCandidates.has(candStr)) {
+        processedCandidates.add(candStr);
+        try {
+          const candidate = new RTCIceCandidate(JSON.parse(candStr));
+          pc.addIceCandidate(candidate).catch(e => console.warn("Error adding queued ICE candidate:", e));
+        } catch (err) {
+          console.warn("Failed to parse queued ICE candidate string:", err);
+        }
+      }
+    });
+  }
+
   candidateList.forEach(candStr => {
     if (!processedCandidates.has(candStr)) {
       processedCandidates.add(candStr);
@@ -268,6 +296,7 @@ export function closePeerConnection() {
     pc = null;
   }
   processedCandidates.clear();
+  pendingRemoteCandidates = [];
   calleeMinusCallerSkew = 0;
   syncMessageCallback = null;
 }

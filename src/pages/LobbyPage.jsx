@@ -28,13 +28,20 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
   const handleCreateRoom = async () => {
     // Generate clean 6-digit numeric Room ID for easy sharing
     const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
+    const myHostToken = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
     try {
+      try {
+        sessionStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
+        localStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
+      } catch (_) {}
+
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newRoomId);
       await setDoc(roomRef, {
         mode: 'open',
         status: 'open',
         callType: 'video',
-        peers: {},
+        hostToken: myHostToken,
         offer: null,
         answer: null,
         callerCandidates: [],

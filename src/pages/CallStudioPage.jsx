@@ -937,240 +937,233 @@ export function CallStudioPage() {
             });
           }
         } else {
-          // Open Lobby Room Flow (Wait-Until-2nd-Peer)
-          setStatusText("Waiting for the 2nd participant to join... Share the link to begin.");
+          // Open Meeting Room Flow (Google Meet / Zoom style)
+          const storedToken =
+            sessionStorage.getItem(`alaapi_host_token_${roomId}`) ||
+            localStorage.getItem(`alaapi_host_token_${roomId}`);
+          const isRoomHost = Boolean(
+            (storedToken && roomData?.hostToken && storedToken === roomData.hostToken) ||
+            (currentUser && roomData?.host?.uid && roomData.host.uid === currentUser.uid)
+          );
+          effectiveIsCallerRef.current = isRoomHost;
 
-          // Register presence
-          await updateDoc(roomRef, {
-            [`peers.${myPeerId}`]: Date.now()
-          }).catch(async () => {
-            await setDoc(roomRef, {
-              peers: { [myPeerId]: Date.now() }
-            }, { merge: true }).catch(() => {});
+          initPeerConnection({
+            localStream: stream,
+            isCaller: isRoomHost,
+            isAudioOnly,
+            onRemoteStream: (remoteStream) => {
+              if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+                remoteVideoRef.current.srcObject = remoteStream;
+                remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
+
+                const preferred = getPreferredDevices();
+                if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
+                  remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+                }
+
+                setRemoteConnected(true);
+                setIsReconnecting(false);
+                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+              }
+            },
+            onIceCandidate: async (candidate) => {
+              const candidateStr = JSON.stringify(candidate.toJSON());
+              const field = isRoomHost ? 'callerCandidates' : 'calleeCandidates';
+              await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
+            },
+            onConnectionStateChange: (state) => {
+              console.log(`[Meeting WebRTC] Connection state: ${state}`);
+
+              if (state === 'connected' || state === 'completed') {
+                if (disconnectTimerRef.current) {
+                  clearTimeout(disconnectTimerRef.current);
+                  disconnectTimerRef.current = null;
+                }
+                if (iceRestartTimerRef.current) {
+                  clearTimeout(iceRestartTimerRef.current);
+                  iceRestartTimerRef.current = null;
+                }
+                setIsReconnecting(false);
+                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+              } else if (state === 'disconnected' || state === 'failed') {
+                setIsReconnecting(true);
+                setStatusText("Network interruption... Reconnecting...");
+
+                // Do not kill call if tab is hidden or sharing
+                if (!disconnectTimerRef.current && document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
+                  disconnectTimerRef.current = setTimeout(() => {
+                    if (document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
+                      discardCallSession("Connection lost.", false);
+                    }
+                  }, 30000);
+                }
+
+                // Automatic ICE restart by host after grace period
+                if (isRoomHost && !iceRestartTimerRef.current) {
+                  iceRestartTimerRef.current = setTimeout(async () => {
+                    if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+                      try {
+                        console.log("[Meeting WebRTC] Executing automatic ICE restart...");
+                        if (typeof pc.restartIce === 'function') pc.restartIce();
+                        const offer = await pc.createOffer({ iceRestart: true });
+                        const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+                        const rtcOffer = new RTCSessionDescription({ type: offer.type, sdp });
+                        await pc.setLocalDescription(rtcOffer);
+                        await optimizeAudioSenders(pc, isAudioOnly);
+                        await updateDoc(roomRef, {
+                          offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
+                          answer: null
+                        });
+                      } catch (e) {
+                        console.warn("ICE restart failed:", e);
+                      }
+                    }
+                  }, 3000);
+                }
+              }
+            }
           });
 
-          // 15-second heartbeat
-          if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
-          heartbeatIntervalRef.current = setInterval(() => {
-            if (isTerminated || isLeavingRef.current) return;
-            updateDoc(roomRef, {
-              [`peers.${myPeerId}`]: Date.now()
-            }).catch(() => {});
-          }, 15000);
+          if (isRoomHost) {
+            // Host prepares offer immediately (like Google Meet / Zoom)
+            setStatusText(`Meeting Ready [${roomId}]. Share the link to invite participants.`);
 
-          const applyOfferAndAnswer = async (offerData) => {
             try {
-              lastAnsweredOfferSdp.current = offerData.sdp;
-              const offerDesc = new RTCSessionDescription(offerData);
-              await pc.setRemoteDescription(offerDesc);
-
-              const answer = await pc.createAnswer();
-              const sdp = isAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
-              const rtcAnswer = new RTCSessionDescription({
-                type: answer.type,
-                sdp
-              });
-              await pc.setLocalDescription(rtcAnswer);
+              const offer = await pc.createOffer();
+              const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+              const rtcOffer = new RTCSessionDescription({ type: offer.type, sdp });
+              await pc.setLocalDescription(rtcOffer);
               await optimizeAudioSenders(pc, isAudioOnly);
 
               await updateDoc(roomRef, {
-                answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
-                calleeMirrored: isLocalMirrored,
-                guest: currentUser ? {
-                  uid: currentUser.uid,
-                  displayName: currentUser.displayName
-                } : null
+                offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
+                callerMirrored: isLocalMirrored,
+                status: 'open'
               });
-
-              setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
             } catch (err) {
-              console.error("Open room callee answer failed:", err);
-            }
-          };
-
-          roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
-            if (!snapshot.exists()) {
-              discardCallSession("Call ended: Room closed.", false);
-              return;
+              console.error("Host offer creation failed:", err);
             }
 
-            const data = snapshot.data();
-            if (!data || data.status === 'ended') {
-              discardCallSession("This meeting link has expired or ended.", false);
-              return;
-            }
-
-            if (data.callType && data.callType !== callType) {
-              setCallType(data.callType);
-              if (data.callType === 'audio') {
-                setVoiceCallMode(true);
-                setHasLocalVideo(false);
-                setIsVideoOff(true);
-                if (localStream) {
-                  localStream.getVideoTracks().forEach(track => {
-                    track.stop();
-                    localStream.removeTrack(track);
-                  });
-                  const audioTrack = localStream.getAudioTracks()[0];
-                  if (audioTrack && typeof audioTrack.applyConstraints === 'function') {
-                    audioTrack.applyConstraints(buildAudioConstraints(null, true)).catch(e => {
-                      console.warn("Could not apply speech constraints to audio track:", e);
-                    });
-                  }
-                }
-                if (localVideoRef.current) {
-                  localVideoRef.current.srcObject = null;
-                }
+            // Host listens for guest answer & candidates
+            roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+              if (!snapshot.exists()) {
+                discardCallSession("Call ended: Room closed.", false);
+                return;
               }
-            }
 
-            const peersObj = data.peers || {};
-            const now = Date.now();
-            const activePeerIds = Object.keys(peersObj)
-              .filter(pid => typeof peersObj[pid] === 'number' && (now - peersObj[pid]) < 40000)
-              .sort();
+              const data = snapshot.data();
+              if (!data || data.status === 'ended') {
+                discardCallSession("This meeting link has expired or ended.", false);
+                return;
+              }
 
-            // When 2nd participant joins, initialize WebRTC
-            if (activePeerIds.length >= 2 && !webrtcStartedRef.current) {
-              webrtcStartedRef.current = true;
-              const effectiveIsCaller = activePeerIds[0] === myPeerId;
-              effectiveIsCallerRef.current = effectiveIsCaller;
+              if (data.callType && data.callType !== callType) {
+                setCallType(data.callType);
+              }
 
-              initPeerConnection({
-                localStream: stream,
-                isCaller: effectiveIsCaller,
-                isAudioOnly,
-                onRemoteStream: (remoteStream) => {
-                  if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
-                    remoteVideoRef.current.srcObject = remoteStream;
-                    remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
+              if (typeof data.calleeMirrored === 'boolean') {
+                setIsRemoteMirrored(data.calleeMirrored);
+              }
 
-                    const preferred = getPreferredDevices();
-                    if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
-                      remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
-                    }
-
-                    setRemoteConnected(true);
-                    setIsReconnecting(false);
-                    setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
-                  }
-                },
-                onIceCandidate: async (candidate) => {
-                  const candidateStr = JSON.stringify(candidate.toJSON());
-                  const field = effectiveIsCaller ? 'callerCandidates' : 'calleeCandidates';
-                  await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
-                },
-                onConnectionStateChange: (state) => {
-                  console.log(`[WebRTC OpenRoom] Connection state: ${state}`);
-
-                  if (state === 'connected' || state === 'completed') {
-                    if (disconnectTimerRef.current) {
-                      clearTimeout(disconnectTimerRef.current);
-                      disconnectTimerRef.current = null;
-                    }
-                    if (iceRestartTimerRef.current) {
-                      clearTimeout(iceRestartTimerRef.current);
-                      iceRestartTimerRef.current = null;
-                    }
-                    setIsReconnecting(false);
-                    setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
-                  } else if (state === 'disconnected' || state === 'failed') {
-                    setIsReconnecting(true);
-                    setStatusText("Network interruption... Reconnecting...");
-
-                    // Graceful disconnect limit (only if tab is visible and not sharing)
-                    if (!disconnectTimerRef.current && document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
-                      disconnectTimerRef.current = setTimeout(() => {
-                        if (document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
-                          discardCallSession("Connection lost.", false);
-                        }
-                      }, 25000);
-                    }
-
-                    if (effectiveIsCaller && !iceRestartTimerRef.current) {
-                      iceRestartTimerRef.current = setTimeout(async () => {
-                        if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
-                          try {
-                            if (typeof pc.restartIce === 'function') {
-                              pc.restartIce();
-                            }
-                            const offer = await pc.createOffer({ iceRestart: true });
-                            const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
-                            const rtcOffer = new RTCSessionDescription({
-                              type: offer.type,
-                              sdp
-                            });
-                            await pc.setLocalDescription(rtcOffer);
-                            await optimizeAudioSenders(pc, isAudioOnly);
-                            await updateDoc(roomRef, {
-                              offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
-                              answer: null
-                            });
-                          } catch (e) {
-                            console.warn("ICE restart failed:", e);
-                          }
-                        }
-                      }, 2500);
-                    }
-                  }
-                }
-              });
-
-              if (effectiveIsCaller) {
-                setStatusText("Participant joined! Connecting...");
-                const offer = await pc.createOffer();
-                const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
-                const rtcOffer = new RTCSessionDescription({
-                  type: offer.type,
-                  sdp
-                });
-                await pc.setLocalDescription(rtcOffer);
+              // When guest answer arrives:
+              if (data.answer && data.answer.sdp && data.answer.sdp !== lastAppliedAnswerSdp.current && pc && pc.signalingState === 'have-local-offer') {
+                lastAppliedAnswerSdp.current = data.answer.sdp;
+                const answerDesc = new RTCSessionDescription(data.answer);
+                await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
                 await optimizeAudioSenders(pc, isAudioOnly);
-                await updateDoc(roomRef, {
-                  offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
-                  callerMirrored: isLocalMirrored
-                });
-              } else {
-                setStatusText("Connecting to participant...");
-                if (data.offer && data.offer.sdp && pc) {
-                  await applyOfferAndAnswer(data.offer);
-                }
+                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
               }
-            }
 
-            // Once WebRTC is running, handle signaling exchange
-            if (webrtcStartedRef.current) {
-              const effectiveIsCaller = effectiveIsCallerRef.current;
-              if (effectiveIsCaller) {
-                if (typeof data.calleeMirrored === 'boolean') {
-                  setIsRemoteMirrored(data.calleeMirrored);
-                }
-                if (data.answer && data.answer.sdp && data.answer.sdp !== lastAppliedAnswerSdp.current && pc && pc.signalingState === 'have-local-offer') {
-                  lastAppliedAnswerSdp.current = data.answer.sdp;
-                  const answerDesc = new RTCSessionDescription(data.answer);
-                  await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
-                  await optimizeAudioSenders(pc, isAudioOnly);
-                  setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
-                }
-                if (data.calleeCandidates) {
-                  processRemoteCandidates(data.calleeCandidates);
-                }
-              } else {
-                if (typeof data.callerMirrored === 'boolean') {
-                  setIsRemoteMirrored(data.callerMirrored);
-                }
-                if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc && pc.signalingState !== 'closed') {
-                  await applyOfferAndAnswer(data.offer);
-                }
-                if (data.callerCandidates) {
-                  processRemoteCandidates(data.callerCandidates);
+              // Process remote candidates from guest
+              if (data.calleeCandidates) {
+                processRemoteCandidates(data.calleeCandidates);
+              }
+            }, (err) => {
+              console.error("Host room listener error:", err);
+              discardCallSession("Network error connecting to room.", false);
+            });
+          } else {
+            // Guest joins: awaits host offer, applies it, and sends answer
+            setStatusText(`Connecting to Room [${roomId}]...`);
+
+            roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+              if (!snapshot.exists()) {
+                discardCallSession("This meeting link has expired or ended.", false);
+                return;
+              }
+
+              const data = snapshot.data();
+              if (!data || data.status === 'ended') {
+                discardCallSession("This meeting link has expired or ended.", false);
+                return;
+              }
+
+              if (data.callType && data.callType !== callType) {
+                setCallType(data.callType);
+                if (data.callType === 'audio') {
+                  setVoiceCallMode(true);
+                  setHasLocalVideo(false);
+                  setIsVideoOff(true);
+                  if (localStream) {
+                    localStream.getVideoTracks().forEach(track => {
+                      track.stop();
+                      localStream.removeTrack(track);
+                    });
+                    const audioTrack = localStream.getAudioTracks()[0];
+                    if (audioTrack && typeof audioTrack.applyConstraints === 'function') {
+                      audioTrack.applyConstraints(buildAudioConstraints(null, true)).catch(e => {
+                        console.warn("Could not apply speech constraints to audio track:", e);
+                      });
+                    }
+                  }
+                  if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = null;
+                  }
                 }
               }
-            }
-          }, (err) => {
-            console.error("Open room listener error:", err);
-            discardCallSession("Network error connecting to room.", false);
-          });
+
+              // When host's offer is available:
+              if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc && pc.signalingState !== 'closed') {
+                try {
+                  lastAnsweredOfferSdp.current = data.offer.sdp;
+                  const offerDesc = new RTCSessionDescription(data.offer);
+                  await pc.setRemoteDescription(offerDesc);
+
+                  const effectiveAudioOnly = isAudioOnly || data.callType === 'audio';
+                  const answer = await pc.createAnswer();
+                  const sdp = effectiveAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
+                  const rtcAnswer = new RTCSessionDescription({ type: answer.type, sdp });
+                  await pc.setLocalDescription(rtcAnswer);
+                  await optimizeAudioSenders(pc, effectiveAudioOnly);
+
+                  await updateDoc(roomRef, {
+                    answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
+                    calleeMirrored: isLocalMirrored,
+                    guest: currentUser ? {
+                      uid: currentUser.uid,
+                      displayName: currentUser.displayName
+                    } : null
+                  });
+
+                  setStatusText(effectiveAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+                } catch (err) {
+                  console.error("Guest answer failed:", err);
+                  discardCallSession("Failed to establish audio/video stream.", false);
+                }
+              }
+
+              if (typeof data.callerMirrored === 'boolean') {
+                setIsRemoteMirrored(data.callerMirrored);
+              }
+
+              if (data.callerCandidates) {
+                processRemoteCandidates(data.callerCandidates);
+              }
+            }, (err) => {
+              console.error("Guest room listener error:", err);
+              discardCallSession("Network error connecting to room.", false);
+            });
+          }
         }
       } catch (err) {
         console.error("Call Setup Error:", err);
