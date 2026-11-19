@@ -463,6 +463,9 @@ export function CallStudioPage() {
           });
           if (localStream) setActiveAudioStream(localStream);
         }
+        if (remoteVideoRef.current && typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
+          await remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+        }
       } catch (e) {
         console.warn("Hot-plug recovery warning:", e);
       }
