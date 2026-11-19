@@ -37,7 +37,8 @@ import {
   pc,
   optimizeSdpForMusic,
   optimizeSdpForSpeech,
-  optimizeAudioSenders
+  optimizeAudioSenders,
+  resetIceCandidates
 } from '../services/webrtc';
 import {
   Mic,
@@ -74,7 +75,10 @@ export function CallStudioPage() {
   const [callType, setCallType] = useState(() => urlCallType || 'video');
   const isAudioOnly = callType === 'audio';
   const { currentUser } = useAuth();
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
   const navigate = useNavigate();
+  const isWhatsAppBrowser = typeof navigator !== 'undefined' && /WhatsApp/i.test(navigator.userAgent);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -218,7 +222,7 @@ export function CallStudioPage() {
 
           if (!heartbeatIntervalRef.current) {
             heartbeatIntervalRef.current = setInterval(() => {
-              if (isTerminated || isLeavingRef.current) return;
+              if (isLeavingRef.current) return;
               updateDoc(roomRef, {
                 [`peers.${myPeerId}`]: Date.now()
               }).catch(() => {});
@@ -229,6 +233,7 @@ export function CallStudioPage() {
           if (webrtcStartedRef.current && pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
             try {
               console.log("[WebRTC] Triggering ICE restart after returning from background...");
+              resetIceCandidates();
               if (typeof pc.restartIce === 'function') {
                 pc.restartIce();
               }
@@ -240,7 +245,9 @@ export function CallStudioPage() {
                 await optimizeAudioSenders(pc, isAudioOnly);
                 await updateDoc(roomRef, {
                   offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
-                  answer: null
+                  answer: null,
+                  callerCandidates: [],
+                  calleeCandidates: []
                 });
               }
             } catch (err) {
@@ -587,7 +594,7 @@ export function CallStudioPage() {
       if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended") || message.includes("No answer"))) {
         setErrorModalMsg(message);
       } else {
-        navigate(currentUser ? '/dashboard' : '/', { replace: true });
+        navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
       }
     };
 
@@ -681,6 +688,7 @@ export function CallStudioPage() {
 
         if (!isOpenRoom) {
           // Direct Call WebRTC flow (100% untouched)
+          webrtcStartedRef.current = true;
           initPeerConnection({
             localStream: stream,
             isCaller,
@@ -795,9 +803,9 @@ export function CallStudioPage() {
               callType: isAudioOnly ? 'audio' : 'video',
               createdAt: new Date().toISOString(),
               status: 'active',
-              host: currentUser ? {
-                uid: currentUser.uid,
-                displayName: currentUser.displayName
+              host: currentUserRef.current ? {
+                uid: currentUserRef.current.uid,
+                displayName: currentUserRef.current.displayName
               } : null
             }, { merge: true });
 
@@ -834,6 +842,9 @@ export function CallStudioPage() {
                 const answerDesc = new RTCSessionDescription(data.answer);
                 await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
                 await optimizeAudioSenders(pc, isAudioOnly);
+                if (data.calleeCandidates) {
+                  processRemoteCandidates(data.calleeCandidates);
+                }
                 setStatusText("Participant joined! Connecting...");
 
                 if (unansweredTimeoutRef.current) {
@@ -897,6 +908,9 @@ export function CallStudioPage() {
 
                   const offerDesc = new RTCSessionDescription(data.offer);
                   await pc.setRemoteDescription(offerDesc);
+                  if (data.callerCandidates) {
+                    processRemoteCandidates(data.callerCandidates);
+                  }
 
                   const effectiveAudioOnly = isAudioOnly || data.callType === 'audio';
                   const answer = await pc.createAnswer();
@@ -911,9 +925,9 @@ export function CallStudioPage() {
                   await updateDoc(roomRef, {
                     answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
                     calleeMirrored: isLocalMirrored,
-                    guest: currentUser ? {
-                      uid: currentUser.uid,
-                      displayName: currentUser.displayName
+                    guest: currentUserRef.current ? {
+                      uid: currentUserRef.current.uid,
+                      displayName: currentUserRef.current.displayName
                     } : null
                   });
 
@@ -938,14 +952,13 @@ export function CallStudioPage() {
           }
         } else {
           // Open Meeting Room Flow (Google Meet / Zoom style)
-          const storedToken =
-            sessionStorage.getItem(`alaapi_host_token_${roomId}`) ||
-            localStorage.getItem(`alaapi_host_token_${roomId}`);
+          const storedToken = sessionStorage.getItem(`alaapi_host_token_${roomId}`);
           const isRoomHost = Boolean(
             (storedToken && roomData?.hostToken && storedToken === roomData.hostToken) ||
-            (currentUser && roomData?.host?.uid && roomData.host.uid === currentUser.uid)
+            (currentUserRef.current && roomData?.host?.uid && roomData.host.uid === currentUserRef.current.uid)
           );
           effectiveIsCallerRef.current = isRoomHost;
+          webrtcStartedRef.current = true;
 
           initPeerConnection({
             localStream: stream,
@@ -989,21 +1002,13 @@ export function CallStudioPage() {
                 setIsReconnecting(true);
                 setStatusText("Network interruption... Reconnecting...");
 
-                // Do not kill call if tab is hidden or sharing
-                if (!disconnectTimerRef.current && document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
-                  disconnectTimerRef.current = setTimeout(() => {
-                    if (document.visibilityState === 'visible' && !isSharingOrBackgroundRef.current) {
-                      discardCallSession("Connection lost.", false);
-                    }
-                  }, 30000);
-                }
-
                 // Automatic ICE restart by host after grace period
                 if (isRoomHost && !iceRestartTimerRef.current) {
                   iceRestartTimerRef.current = setTimeout(async () => {
                     if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
                       try {
                         console.log("[Meeting WebRTC] Executing automatic ICE restart...");
+                        resetIceCandidates();
                         if (typeof pc.restartIce === 'function') pc.restartIce();
                         const offer = await pc.createOffer({ iceRestart: true });
                         const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
@@ -1012,7 +1017,9 @@ export function CallStudioPage() {
                         await optimizeAudioSenders(pc, isAudioOnly);
                         await updateDoc(roomRef, {
                           offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
-                          answer: null
+                          answer: null,
+                          callerCandidates: [],
+                          calleeCandidates: []
                         });
                       } catch (e) {
                         console.warn("ICE restart failed:", e);
@@ -1071,6 +1078,9 @@ export function CallStudioPage() {
                 const answerDesc = new RTCSessionDescription(data.answer);
                 await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
                 await optimizeAudioSenders(pc, isAudioOnly);
+                if (data.calleeCandidates) {
+                  processRemoteCandidates(data.calleeCandidates);
+                }
                 setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
               }
 
@@ -1128,6 +1138,9 @@ export function CallStudioPage() {
                   lastAnsweredOfferSdp.current = data.offer.sdp;
                   const offerDesc = new RTCSessionDescription(data.offer);
                   await pc.setRemoteDescription(offerDesc);
+                  if (data.callerCandidates) {
+                    processRemoteCandidates(data.callerCandidates);
+                  }
 
                   const effectiveAudioOnly = isAudioOnly || data.callType === 'audio';
                   const answer = await pc.createAnswer();
@@ -1139,9 +1152,9 @@ export function CallStudioPage() {
                   await updateDoc(roomRef, {
                     answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
                     calleeMirrored: isLocalMirrored,
-                    guest: currentUser ? {
-                      uid: currentUser.uid,
-                      displayName: currentUser.displayName
+                    guest: currentUserRef.current ? {
+                      uid: currentUserRef.current.uid,
+                      displayName: currentUserRef.current.displayName
                     } : null
                   });
 
@@ -1191,7 +1204,7 @@ export function CallStudioPage() {
       }
       discardCallSession("Session closed.", true);
     };
-  }, [roomId, isCaller, currentUser, navigate]);
+  }, [roomId, isCaller, navigate]);
 
   // Leave Call action
   const handleLeaveCall = async () => {
@@ -1225,7 +1238,7 @@ export function CallStudioPage() {
     stopLocalMedia(localVideoRef.current);
     setVoiceCallMode(false);
     releaseScreenWakeLock();
-    navigate(currentUser ? '/dashboard' : '/', { replace: true });
+    navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
   };
 
   // Toggle Microphone
@@ -1538,7 +1551,19 @@ export function CallStudioPage() {
   };
 
   return (
-    <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none">
+    <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none relative">
+      {/* WhatsApp In-App Browser Banner */}
+      {isWhatsAppBrowser && (
+        <div className="absolute top-0 inset-x-0 z-50 bg-amber-500 text-gray-950 px-3 py-1.5 text-[11px] sm:text-xs font-semibold flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2 truncate">
+            <AlertCircle className="w-4 h-4 shrink-0 text-gray-950" />
+            <span className="truncate">
+              Viewing in WhatsApp. For reliable camera & high-fidelity audio, tap <strong>⋮</strong> (top right) &gt; <strong>Open in Chrome</strong>.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 1. Main Remote Stage */}
       <div id="remoteStage" className="relative flex-1 min-h-0 w-full h-full bg-black rounded-none overflow-hidden flex items-center justify-center">
         {/* Remote Video Stream (Hidden when Audio Only, plays incoming audio) */}

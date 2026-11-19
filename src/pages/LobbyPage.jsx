@@ -14,7 +14,12 @@ import {
   Settings2,
   Loader2,
   Download,
-  Smartphone
+  Smartphone,
+  Share2,
+  Copy,
+  Check,
+  X,
+  Video
 } from 'lucide-react';
 
 export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
@@ -23,9 +28,13 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
   const [joinRoomId, setJoinRoomId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isCheckingRoom, setIsCheckingRoom] = useState(false);
+  const [createdRoom, setCreatedRoom] = useState(null); // { roomId, shareUrl }
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const navigate = useNavigate();
 
   const handleCreateRoom = async () => {
+    setIsCreatingRoom(true);
     // Generate clean 6-digit numeric Room ID for easy sharing
     const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
     const myHostToken = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -33,7 +42,6 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
     try {
       try {
         sessionStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
-        localStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
       } catch (_) {}
 
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newRoomId);
@@ -49,10 +57,46 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
         createdAt: new Date().toISOString(),
         host: currentUser ? { uid: currentUser.uid, displayName: currentUser.displayName } : null
       });
+
+      const shareUrl = `${window.location.origin}/room/${newRoomId}`;
+      setCreatedRoom({ roomId: newRoomId, shareUrl });
     } catch (err) {
       console.warn("Could not pre-create open room in Firestore:", err);
+      navigate(`/room/${newRoomId}`, { replace: true });
+    } finally {
+      setIsCreatingRoom(false);
     }
-    navigate(`/room/${newRoomId}`, { replace: true });
+  };
+
+  const handleShareWhatsApp = async () => {
+    if (!createdRoom) return;
+    const shareText = `Join my live singing class on Alaapi: ${createdRoom.shareUrl}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Alaapi Music Studio',
+          text: shareText,
+          url: createdRoom.shareUrl
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCopyLink = () => {
+    if (!createdRoom) return;
+    navigator.clipboard.writeText(createdRoom.shareUrl).then(() => {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }).catch(() => {});
+  };
+
+  const handleStartClass = () => {
+    if (!createdRoom) return;
+    navigate(`/room/${createdRoom.roomId}`, { replace: true });
   };
 
   const handleJoinRoom = async (e) => {
@@ -167,9 +211,11 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
             </p>
             <button
               onClick={handleCreateRoom}
-              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 active:scale-98 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-md shadow-purple-900/30 transition-all mt-auto"
+              disabled={isCreatingRoom}
+              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 active:scale-98 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-md shadow-purple-900/30 transition-all mt-auto disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              Create Room
+              {isCreatingRoom && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isCreatingRoom ? "Creating Room..." : "Create Room"}
             </button>
           </div>
 
@@ -234,6 +280,73 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
           </Link>
         </div>
       </div>
+
+      {/* Google Meet-Style "Your Class Room is Ready" Modal */}
+      {createdRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-gray-900 border border-purple-500/40 rounded-2xl sm:rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl flex flex-col gap-4 text-center relative">
+            <button
+              onClick={() => handleStartClass()}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+              title="Close and Enter Room"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/30 to-pink-500/30 border border-purple-500/50 flex items-center justify-center mx-auto text-purple-300 shadow-inner">
+              <Video className="w-6 h-6 text-purple-400" />
+            </div>
+
+            <div>
+              <h3 className="text-lg sm:text-xl font-bold text-white mb-1">Your Class Room is Ready!</h3>
+              <p className="text-xs text-gray-400">
+                Share this link with your student or peer via WhatsApp before joining, or enter now.
+              </p>
+            </div>
+
+            {/* Room Code Badge */}
+            <div className="bg-gray-800/80 border border-gray-700 rounded-xl p-3 flex flex-col items-center gap-1">
+              <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Room Code</span>
+              <span className="text-2xl font-mono font-black text-purple-300 tracking-wider">
+                {createdRoom.roomId.slice(0, 3)} {createdRoom.roomId.slice(3)}
+              </span>
+              <span className="text-[11px] text-gray-400 font-mono truncate max-w-full px-2">
+                {createdRoom.shareUrl}
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-2.5">
+              {/* WhatsApp Share Button */}
+              <button
+                onClick={handleShareWhatsApp}
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/30 transition-all"
+              >
+                <Share2 className="w-4 h-4" />
+                Share via WhatsApp
+              </button>
+
+              {/* Copy Link Button */}
+              <button
+                onClick={handleCopyLink}
+                className="w-full py-2.5 px-4 rounded-xl bg-gray-800 hover:bg-gray-750 active:scale-98 text-gray-200 hover:text-white border border-gray-700 font-semibold text-xs flex items-center justify-center gap-2 transition-all"
+              >
+                {copiedLink ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                {copiedLink ? "Link Copied to Clipboard!" : "Copy Class Link"}
+              </button>
+
+              {/* Enter Room Button */}
+              <button
+                onClick={handleStartClass}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-98 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 transition-all mt-1"
+              >
+                <span>Enter Class Room</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* iOS Installation Instructions Guide */}
       <IosInstallModal isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />

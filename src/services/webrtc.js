@@ -4,14 +4,28 @@
 
 export const rtcServers = {
   iceServers: [
-    { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }
-  ]
+    {
+      urls: [
+        'stun:stun1.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:stun3.l.google.com:19302',
+        'stun:stun4.l.google.com:19302'
+      ]
+    },
+    { urls: ['stun:stun.cloudflare.com:3478'] }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 export let pc = null;
 export let dataChannel = null;
 export let processedCandidates = new Set();
 export let pendingRemoteCandidates = [];
+
+export function resetIceCandidates() {
+  processedCandidates.clear();
+  pendingRemoteCandidates = [];
+}
 
 let isPeerCaller = false;
 let calleeMinusCallerSkew = 0; // Difference: Callee_Clock - Caller_Clock
