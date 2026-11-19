@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useCall } from '../context/CallContext';
 import {
   db,
   appId,
@@ -77,6 +78,7 @@ export function CallStudioPage() {
   const { currentUser } = useAuth();
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
+  const { incomingCall } = useCall();
   const navigate = useNavigate();
   const isWhatsAppBrowser = typeof navigator !== 'undefined' && /WhatsApp/i.test(navigator.userAgent);
 
@@ -94,6 +96,33 @@ export function CallStudioPage() {
   const [hasLocalVideo, setHasLocalVideo] = useState(() => !isAudioOnly);
   const [hasLocalAudio, setHasLocalAudio] = useState(true);
   const [errorModalMsg, setErrorModalMsg] = useState(null);
+  const [errorCountdown, setErrorCountdown] = useState(5);
+
+  // Auto-dismiss disconnect notice modal after 5 seconds or immediately if another incoming call arrives
+  useEffect(() => {
+    if (!errorModalMsg) return;
+
+    if (incomingCall) {
+      setErrorModalMsg(null);
+      navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
+      return;
+    }
+
+    setErrorCountdown(5);
+    const countdownInterval = setInterval(() => {
+      setErrorCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval);
+          setErrorModalMsg(null);
+          navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(countdownInterval);
+  }, [errorModalMsg, incomingCall, navigate]);
 
   // Health Diagnostics: Mic Level & Ping
   const [micLevel, setMicLevel] = useState(0); // 0..100
@@ -591,7 +620,15 @@ export function CallStudioPage() {
       setVoiceCallMode(false);
       releaseScreenWakeLock();
 
-      if (message && (message.includes("not found") || message.includes("unavailable") || message.includes("ended") || message.includes("No answer"))) {
+      if (message && (
+        message.includes("not found") ||
+        message.includes("unavailable") ||
+        message.includes("ended") ||
+        message.includes("No answer") ||
+        message.includes("lost") ||
+        message.includes("disconnected") ||
+        message.includes("declined")
+      )) {
         setErrorModalMsg(message);
       } else {
         navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
@@ -2049,17 +2086,23 @@ export function CallStudioPage() {
       {/* Graceful Session Error Modal */}
       {errorModalMsg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn select-none">
-          <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+          <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl relative">
             <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center mx-auto mb-3 text-red-400">
               <AlertCircle className="w-6 h-6" />
             </div>
             <h3 className="text-base font-bold text-white mb-2">Class Session Notice</h3>
-            <p className="text-xs text-gray-300 mb-5 leading-relaxed">{errorModalMsg}</p>
+            <p className="text-xs text-gray-300 mb-3 leading-relaxed">{errorModalMsg}</p>
+            <p className="text-[11px] text-purple-300/80 mb-5 font-mono">
+              Auto-returning to dashboard in {errorCountdown}s...
+            </p>
             <button
-              onClick={() => navigate(currentUser ? '/dashboard' : '/', { replace: true })}
-              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+              onClick={() => {
+                setErrorModalMsg(null);
+                navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
+              }}
+              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
             >
-              Return to {currentUser ? 'Dashboard' : 'Lobby'}
+              Return to {currentUserRef.current ? 'Dashboard' : 'Lobby'} ({errorCountdown}s)
             </button>
           </div>
         </div>

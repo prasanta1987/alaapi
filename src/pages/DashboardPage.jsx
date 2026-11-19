@@ -10,7 +10,9 @@ import {
   doc,
   updateDoc,
   deleteDoc,
-  getDocs
+  getDocs,
+  query,
+  where
 } from '../services/firebase';
 import {
   RINGTONE_OPTIONS,
@@ -151,6 +153,41 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
 
   // Handle changing user role (Admin only)
   const handleRoleChange = async (targetUid, newRole) => {
+    const targetUser = allUsers.find(u => u.id === targetUid);
+    const roleRanks = { admin: 3, teacher: 2, student: 1 };
+    const currentRole = targetUser?.role || 'student';
+
+    // Demotion check: Admin -> Teacher/Student, or Teacher -> Student
+    if (targetUser && roleRanks[newRole] < roleRanks[currentRole]) {
+      const assignedStudents = allUsers.filter(u => u.teacherId === targetUid);
+      const studentCount = assignedStudents.length;
+
+      let confirmMessage = `Are you sure you want to demote "${targetUser.displayName || targetUser.email || 'this user'}" from ${currentRole.toUpperCase()} to ${newRole.toUpperCase()}?`;
+      if (newRole === 'student' && studentCount > 0) {
+        confirmMessage += `\n\n⚠️ WARNING: ${studentCount} student(s) currently assigned to this user will be unassigned, and their teacher assignment records will be deleted.`;
+      }
+
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return;
+
+      if (newRole === 'student' && (currentRole === 'teacher' || currentRole === 'admin')) {
+        try {
+          const studentsQuery = query(
+            collection(db, 'artifacts', appId, 'public', 'data', 'users'),
+            where('teacherId', '==', targetUid)
+          );
+          const studentsSnap = await getDocs(studentsQuery);
+          await Promise.all(studentsSnap.docs.map(sDoc => updateDoc(sDoc.ref, {
+            teacherId: '',
+            teacherName: '',
+            teacherAssignedAt: ''
+          })));
+        } catch (e) {
+          console.warn("Could not unassign students from demoted teacher:", e);
+        }
+      }
+    }
+
     try {
       const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', targetUid);
       const updatePayload = { role: newRole };
