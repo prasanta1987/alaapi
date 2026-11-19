@@ -142,7 +142,7 @@ export function CallStudioPage() {
     }
 
     const shareUrl = `${window.location.origin}/room/${roomId}`;
-    const shareText = `Join my live music session on Alaapi: ${shareUrl}`;
+    const shareText = `Join My Live Calling Session: ${shareUrl}`;
     if (navigator.share) {
       try {
         await navigator.share({
@@ -181,11 +181,11 @@ export function CallStudioPage() {
           disconnectTimerRef.current = null;
         }
 
-        requestScreenWakeLock().catch(() => {});
+        requestScreenWakeLock().catch(() => { });
 
         // Revive local video playback
         if (localVideoRef.current && localVideoRef.current.paused) {
-          localVideoRef.current.play().catch(() => {});
+          localVideoRef.current.play().catch(() => { });
         }
 
         // Check if Android OS killed local hardware tracks while WhatsApp was foregrounded
@@ -218,14 +218,14 @@ export function CallStudioPage() {
           const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
           updateDoc(roomRef, {
             [`peers.${myPeerId}`]: Date.now()
-          }).catch(() => {});
+          }).catch(() => { });
 
           if (!heartbeatIntervalRef.current) {
             heartbeatIntervalRef.current = setInterval(() => {
               if (isLeavingRef.current) return;
               updateDoc(roomRef, {
                 [`peers.${myPeerId}`]: Date.now()
-              }).catch(() => {});
+              }).catch(() => { });
             }, 15000);
           }
 
@@ -363,13 +363,13 @@ export function CallStudioPage() {
 
       // Immediate attempt to resume
       if (micAudioCtx.state === 'suspended') {
-        micAudioCtx.resume().catch(() => {});
+        micAudioCtx.resume().catch(() => { });
       }
 
       // Resume context on any user interaction (pointerdown, touchstart, click, keydown)
       const resumeAudioCtx = () => {
         if (micAudioCtx && micAudioCtx.state === 'suspended') {
-          micAudioCtx.resume().catch(() => {});
+          micAudioCtx.resume().catch(() => { });
         }
       };
 
@@ -400,7 +400,7 @@ export function CallStudioPage() {
         if (isCancelled) return;
 
         if (micAudioCtx.state === 'suspended') {
-          micAudioCtx.resume().catch(() => {});
+          micAudioCtx.resume().catch(() => { });
         }
 
         // 1. Time-domain RMS calculation
@@ -469,7 +469,7 @@ export function CallStudioPage() {
           analyser.disconnect();
           silentGain.disconnect();
           micAudioCtx.close();
-        } catch (e) {}
+        } catch (e) { }
         setMicLevel(0);
       };
     } catch (e) {
@@ -492,7 +492,7 @@ export function CallStudioPage() {
             setPingRtt(Math.round(report.currentRoundTripTime * 1000));
           }
         });
-      }).catch(() => {});
+      }).catch(() => { });
     };
 
     pollStats();
@@ -564,7 +564,7 @@ export function CallStudioPage() {
         try {
           const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
           await deleteDoc(callRef);
-        } catch (e) {}
+        } catch (e) { }
       }
 
       if (shouldDelete && roomId) {
@@ -573,7 +573,7 @@ export function CallStudioPage() {
           if (isOpenRoomRef.current) {
             await updateDoc(roomRef, {
               [`peers.${myPeerId}`]: deleteField()
-            }).catch(() => {});
+            }).catch(() => { });
           } else {
             await deleteDoc(roomRef);
           }
@@ -627,7 +627,7 @@ export function CallStudioPage() {
           if (localStream) setActiveAudioStream(localStream);
         }
         if (remoteVideoRef.current && typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
-          await remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+          await remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => { });
         }
       } catch (e) {
         console.warn("Hot-plug recovery warning:", e);
@@ -701,7 +701,7 @@ export function CallStudioPage() {
                 // Route remote audio to user's preferred speaker if set
                 const preferred = getPreferredDevices();
                 if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
-                  remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+                  remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => { });
                 }
 
                 setRemoteConnected(true);
@@ -717,7 +717,7 @@ export function CallStudioPage() {
             onIceCandidate: async (candidate) => {
               const candidateStr = JSON.stringify(candidate.toJSON());
               const field = isCaller ? 'callerCandidates' : 'calleeCandidates';
-              await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
+              await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => { });
             },
             onConnectionStateChange: (state) => {
               console.log(`[WebRTC] Connection state: ${state}`);
@@ -971,7 +971,7 @@ export function CallStudioPage() {
 
                 const preferred = getPreferredDevices();
                 if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
-                  remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+                  remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => { });
                 }
 
                 setRemoteConnected(true);
@@ -982,7 +982,7 @@ export function CallStudioPage() {
             onIceCandidate: async (candidate) => {
               const candidateStr = JSON.stringify(candidate.toJSON());
               const field = isRoomHost ? 'callerCandidates' : 'calleeCandidates';
-              await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
+              await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => { });
             },
             onConnectionStateChange: (state) => {
               console.log(`[Meeting WebRTC] Connection state: ${state}`);
@@ -1191,7 +1191,7 @@ export function CallStudioPage() {
       // We must NOT wipe open rooms, peers, or stop the heartbeat here so link sharing never destroys the session.
       if (!isOpenRoomRef.current && callId) {
         const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
-        deleteDoc(callRef).catch(() => {});
+        deleteDoc(callRef).catch(() => { });
       }
     };
 
@@ -1221,8 +1221,8 @@ export function CallStudioPage() {
             status: 'ended',
             offer: null,
             answer: null
-          }).catch(() => {});
-          await deleteDoc(roomRef).catch(() => {});
+          }).catch(() => { });
+          await deleteDoc(roomRef).catch(() => { });
         } else {
           await deleteDoc(roomRef);
         }
@@ -1445,13 +1445,12 @@ export function CallStudioPage() {
             <span
               key={barIndex}
               style={{ height: `${barIndex * 2.5 + 2}px` }}
-              className={`w-1 rounded-full transition-all duration-75 ${
-                isMuted || !hasLocalAudio
+              className={`w-1 rounded-full transition-all duration-75 ${isMuted || !hasLocalAudio
                   ? 'bg-red-500/40'
                   : active
-                  ? barIndex >= 4 ? 'bg-amber-400' : 'bg-emerald-400'
-                  : 'bg-gray-700'
-              }`}
+                    ? barIndex >= 4 ? 'bg-amber-400' : 'bg-emerald-400'
+                    : 'bg-gray-700'
+                }`}
             />
           );
         })}
@@ -1519,8 +1518,8 @@ export function CallStudioPage() {
           !remoteConnected
             ? "Waiting for participant to connect"
             : isReconnecting
-            ? "Network interruption... Reconnecting..."
-            : `Network Round-Trip Time (RTT): ${pingRtt !== null ? `${pingRtt}ms` : 'High-fidelity 48kHz audio active'}`
+              ? "Network interruption... Reconnecting..."
+              : `Network Round-Trip Time (RTT): ${pingRtt !== null ? `${pingRtt}ms` : 'High-fidelity 48kHz audio active'}`
         }
       >
         <Wifi className={`w-3 h-3 shrink-0 ${textColor}`} />
@@ -1533,9 +1532,8 @@ export function CallStudioPage() {
               <span
                 key={barIndex}
                 style={{ height: `${barIndex * 2.5 + 2}px` }}
-                className={`w-1 rounded-full transition-all duration-150 ${
-                  isActive ? barColor : 'bg-gray-800'
-                }`}
+                className={`w-1 rounded-full transition-all duration-150 ${isActive ? barColor : 'bg-gray-800'
+                  }`}
               />
             );
           })}
@@ -1602,11 +1600,10 @@ export function CallStudioPage() {
 
             {/* High-Fidelity Acoustic Status */}
             <div className="flex items-center gap-2 mb-2">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-                remoteConnected
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${remoteConnected
                   ? 'bg-purple-950/60 text-purple-300 border-purple-500/40'
                   : 'bg-gray-800 text-gray-400 border-gray-700'
-              }`}>
+                }`}>
                 <span className={`w-2 h-2 rounded-full ${remoteConnected ? 'bg-purple-400 animate-pulse' : 'bg-gray-500'}`} />
                 {remoteConnected ? 'Studio Audio Live (48kHz Lossless)' : 'Connecting Audio Stream...'}
               </span>
@@ -1620,18 +1617,16 @@ export function CallStudioPage() {
 
         {/* Remote Video Actions: Vertical Icon-Only Dock (Mirror, Fit/Zoom, Fullscreen) */}
         {remoteConnected && !isAudioOnly && (
-          <div className={`absolute bottom-3 left-3 z-20 flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 ${
-            isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-          }`}>
+          <div className={`absolute bottom-3 left-3 z-20 flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 ${isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
+            }`}>
             {/* Mirror Toggle */}
             <button
               onClick={() => setIsRemoteMirrored(prev => !prev)}
               title={isRemoteMirrored ? "Disable Remote Mirror (Normal)" : "Mirror Remote Video Feed"}
-              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${
-                isRemoteMirrored
+              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRemoteMirrored
                   ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
                   : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
-              }`}
+                }`}
             >
               <FlipHorizontal className="w-4 h-4" />
             </button>
@@ -1640,11 +1635,10 @@ export function CallStudioPage() {
             <button
               onClick={() => setIsRemoteZoomed(prev => !prev)}
               title={isRemoteZoomed ? "Switch to Fit (Show entire video frame)" : "Switch to Fill / Zoom (Cover screen)"}
-              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${
-                isRemoteZoomed
+              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRemoteZoomed
                   ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
                   : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
-              }`}
+                }`}
             >
               <Scan className="w-4 h-4" />
             </button>
@@ -1653,11 +1647,10 @@ export function CallStudioPage() {
             <button
               onClick={handleToggleFullscreen}
               title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${
-                isFullscreen
+              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${isFullscreen
                   ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
                   : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
-              }`}
+                }`}
             >
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
@@ -1687,11 +1680,10 @@ export function CallStudioPage() {
               {/* Level Fill Indicator (Grows from bottom to top) */}
               <div
                 style={{ height: `${remoteVolume}%` }}
-                className={`w-full transition-all duration-75 rounded-full ${
-                  remoteVolume === 0
+                className={`w-full transition-all duration-75 rounded-full ${remoteVolume === 0
                     ? 'bg-red-500/60'
                     : 'bg-gradient-to-t from-purple-600 via-indigo-500 to-purple-400'
-                }`}
+                  }`}
               />
 
               {/* Glowing Thumb Dot */}
@@ -1756,9 +1748,8 @@ export function CallStudioPage() {
         )}
 
         {/* Mobile Top Overlay: Call Timer, Health Diagnostic Pill & Room ID (Auto-dims on mobile idle) */}
-        <div className={`mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none transition-opacity duration-300 ${
-          isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-        }`}>
+        <div className={`mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none transition-opacity duration-300 ${isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
+          }`}>
           <div className="flex items-center gap-1.5 pointer-events-auto">
             {/* Call Running Timer on Mobile / Video Feed */}
             <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/30 shadow">
@@ -1810,23 +1801,19 @@ export function CallStudioPage() {
             </span>
             <div className="flex items-center gap-1.5">
               {/* Connected / Waiting Badge placed near the video feed */}
-              <span className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                remoteConnected
+              <span className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${remoteConnected
                   ? 'bg-green-950/60 text-green-400 border-green-500/40'
                   : 'bg-gray-800/80 text-gray-400 border-gray-700'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  remoteConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'
-                }`} />
+                }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${remoteConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'
+                  }`} />
                 {remoteConnected ? 'Connected' : 'Waiting...'}
               </span>
 
-              <span className={`flex items-center gap-1.5 text-[11px] font-normal lowercase ${
-                hasLocalVideo ? 'text-green-400' : 'text-gray-400'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  hasLocalVideo ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
-                }`} />
+              <span className={`flex items-center gap-1.5 text-[11px] font-normal lowercase ${hasLocalVideo ? 'text-green-400' : 'text-gray-400'
+                }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${hasLocalVideo ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
+                  }`} />
                 {hasLocalVideo ? 'live' : 'inactive'}
               </span>
             </div>
@@ -1971,20 +1958,18 @@ export function CallStudioPage() {
             Studio Controls
           </div>
 
-          <nav id="mediaControls" className={`pointer-events-auto shrink-0 transition-opacity duration-300 ${
-            isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-          }`}>
+          <nav id="mediaControls" className={`pointer-events-auto shrink-0 transition-opacity duration-300 ${isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
+            }`}>
             {/* Mic Toggle */}
             <button
               onClick={handleAudioToggle}
               disabled={!hasLocalAudio}
-              className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
-                !hasLocalAudio
+              className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${!hasLocalAudio
                   ? 'bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed opacity-60'
                   : isMuted
-                  ? 'bg-red-600 hover:bg-red-500 border-red-700'
-                  : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-              }`}
+                    ? 'bg-red-600 hover:bg-red-500 border-red-700'
+                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+                }`}
               title={!hasLocalAudio ? "No microphone attached" : isMuted ? "Unmute Mic" : "Mute Mic"}
             >
               {isMuted || !hasLocalAudio ? <MicOff className="w-5 h-5 shrink-0" /> : <Mic className="w-5 h-5 shrink-0" />}
@@ -1996,13 +1981,12 @@ export function CallStudioPage() {
               <button
                 onClick={handleVideoToggle}
                 disabled={!hasLocalVideo}
-                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
-                  !hasLocalVideo
+                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${!hasLocalVideo
                     ? 'bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed opacity-60'
                     : isVideoOff
-                    ? 'bg-red-600 hover:bg-red-500 border-red-700'
-                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                }`}
+                      ? 'bg-red-600 hover:bg-red-500 border-red-700'
+                      : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+                  }`}
                 title={!hasLocalVideo ? "No camera attached" : isVideoOff ? "Start Video" : "Stop Video"}
               >
                 {isVideoOff || !hasLocalVideo ? <VideoOff className="w-5 h-5 shrink-0" /> : <Video className="w-5 h-5 shrink-0" />}
@@ -2015,13 +1999,12 @@ export function CallStudioPage() {
               <button
                 ref={volumeBtnRef}
                 onClick={() => setShowVolumePopover(prev => !prev)}
-                className={`text-white shadow border transition-colors items-center justify-center gap-2 layout-overlay-volume-btn ${
-                  remoteVolume === 0
+                className={`text-white shadow border transition-colors items-center justify-center gap-2 layout-overlay-volume-btn ${remoteVolume === 0
                     ? 'bg-red-600 hover:bg-red-500 border-red-700'
                     : showVolumePopover
-                    ? 'bg-purple-600 hover:bg-purple-500 border-purple-400'
-                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                }`}
+                      ? 'bg-purple-600 hover:bg-purple-500 border-purple-400'
+                      : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
+                  }`}
                 title={remoteVolume === 0 ? "Speaker Muted - Tap to unmute" : `Speaker Volume: ${remoteVolume}%`}
               >
                 {remoteVolume === 0 ? (
@@ -2039,11 +2022,10 @@ export function CallStudioPage() {
                 id="switchCameraBtn"
                 onClick={handleFlipCamera}
                 disabled={!hasLocalVideo}
-                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${
-                  !hasLocalVideo
+                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${!hasLocalVideo
                     ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-40'
                     : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                }`}
+                  }`}
                 title={!hasLocalVideo ? "Camera not available" : "Switch / Flip Camera"}
               >
                 <RefreshCw className="w-5 h-5 shrink-0" />

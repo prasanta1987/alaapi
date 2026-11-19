@@ -42,7 +42,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
     try {
       try {
         sessionStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
-      } catch (_) {}
+      } catch (_) { }
 
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newRoomId);
       await setDoc(roomRef, {
@@ -70,7 +70,8 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
 
   const handleShareWhatsApp = async () => {
     if (!createdRoom) return;
-    const shareText = `Join my live singing class on Alaapi: ${createdRoom.shareUrl}`;
+    const shareText = `Join My Live Calling Session:`;
+    // const shareText = `Join my live singing class on Alaapi: ${createdRoom.shareUrl}`;
     if (navigator.share) {
       try {
         await navigator.share({
@@ -91,7 +92,7 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
     navigator.clipboard.writeText(createdRoom.shareUrl).then(() => {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   const handleStartClass = () => {
