@@ -8,8 +8,10 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  getDoc,
   onSnapshot,
-  arrayUnion
+  arrayUnion,
+  deleteField
 } from '../services/firebase';
 import {
   localStream,
@@ -58,7 +60,8 @@ import {
   VolumeX,
   Headphones,
   Phone,
-  Music
+  Music,
+  Share2
 } from 'lucide-react';
 
 export function CallStudioPage() {
@@ -117,6 +120,59 @@ export function CallStudioPage() {
   const volumeBtnRef = useRef(null);
   const sliderTrackRef = useRef(null);
   const isDraggingVolumeRef = useRef(false);
+
+  // Open Lobby Room (Wait-Until-2nd-Peer) tracking
+  const isOpenRoomRef = useRef(false);
+  const webrtcStartedRef = useRef(false);
+  const effectiveIsCallerRef = useRef(isCaller);
+  const myPeerId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 7)}`).current;
+  const heartbeatIntervalRef = useRef(null);
+
+  // Safe WhatsApp & Native Link Sharing
+  const handleShareRoomLink = async () => {
+    const shareUrl = `${window.location.origin}/room/${roomId}`;
+    const shareText = `Join my live music session on Alaapi: ${shareUrl}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Alaapi Music Studio',
+          text: shareText,
+          url: shareUrl
+        });
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn('Navigator share error, falling back to WhatsApp:', err);
+        } else {
+          return;
+        }
+      }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  // Return-from-background revival (WhatsApp link sharing recovery)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestScreenWakeLock().catch(() => {});
+        if (localVideoRef.current && localVideoRef.current.paused) {
+          localVideoRef.current.play().catch(() => {});
+        }
+        if (isOpenRoomRef.current && roomId && myPeerId) {
+          const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+          updateDoc(roomRef, {
+            [`peers.${myPeerId}`]: Date.now()
+          }).catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [roomId, myPeerId]);
 
   // Auto-dismiss volume popover on tap outside
   useEffect(() => {
@@ -403,6 +459,11 @@ export function CallStudioPage() {
         callUnsubscribe = null;
       }
 
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+
       if (callId) {
         try {
           const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
@@ -413,7 +474,13 @@ export function CallStudioPage() {
       if (shouldDelete && roomId) {
         try {
           const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-          await deleteDoc(roomRef);
+          if (isOpenRoomRef.current) {
+            await updateDoc(roomRef, {
+              [`peers.${myPeerId}`]: deleteField()
+            }).catch(() => {});
+          } else {
+            await deleteDoc(roomRef);
+          }
         } catch (e) {
           console.warn("Could not delete room doc:", e);
         }
@@ -507,137 +574,328 @@ export function CallStudioPage() {
         await requestScreenWakeLock();
 
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-
-        // WebRTC initialization with automatic ICE restart and connection recovery
-        initPeerConnection({
-          localStream: stream,
-          isCaller,
-          isAudioOnly,
-          onRemoteStream: (remoteStream) => {
-            if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
-              remoteVideoRef.current.srcObject = remoteStream;
-              remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
-
-              // Route remote audio to user's preferred speaker if set
-              const preferred = getPreferredDevices();
-              if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
-                remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
-              }
-
-              setRemoteConnected(true);
-              setIsReconnecting(false);
-              setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
-
-              if (unansweredTimeoutRef.current) {
-                clearTimeout(unansweredTimeoutRef.current);
-                unansweredTimeoutRef.current = null;
-              }
-            }
-          },
-          onIceCandidate: async (candidate) => {
-            const candidateStr = JSON.stringify(candidate.toJSON());
-            const field = isCaller ? 'callerCandidates' : 'calleeCandidates';
-            await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
-          },
-          onConnectionStateChange: (state) => {
-            console.log(`[WebRTC] Connection state: ${state}`);
-
-            if (state === 'connected' || state === 'completed') {
-              if (disconnectTimerRef.current) {
-                clearTimeout(disconnectTimerRef.current);
-                disconnectTimerRef.current = null;
-              }
-              if (iceRestartTimerRef.current) {
-                clearTimeout(iceRestartTimerRef.current);
-                iceRestartTimerRef.current = null;
-              }
-              setIsReconnecting(false);
-              setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
-            } else if (state === 'disconnected' || state === 'failed') {
-              setIsReconnecting(true);
-              setStatusText("Network interruption... Reconnecting...");
-
-              // 14-second hard disconnect limit
-              if (!disconnectTimerRef.current) {
-                disconnectTimerRef.current = setTimeout(() => {
-                  discardCallSession("Connection lost.", true);
-                }, 14000);
-              }
-
-              // Automatic ICE restart by caller after 2.5s grace period
-              if (isCaller && !iceRestartTimerRef.current) {
-                iceRestartTimerRef.current = setTimeout(async () => {
-                  if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
-                    try {
-                      console.log("[WebRTC] Executing automatic ICE restart...");
-                      if (typeof pc.restartIce === 'function') {
-                        pc.restartIce();
-                      }
-                      const offer = await pc.createOffer({ iceRestart: true });
-                      const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
-                      const rtcOffer = new RTCSessionDescription({
-                        type: offer.type,
-                        sdp
-                      });
-                      await pc.setLocalDescription(rtcOffer);
-                      await optimizeAudioSenders(pc, isAudioOnly);
-                      await updateDoc(roomRef, {
-                        offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
-                        answer: null
-                      });
-                    } catch (e) {
-                      console.warn("ICE restart failed:", e);
-                    }
-                  }
-                }, 2500);
-              }
-            }
-          }
-        });
-
-        // 45-Second Unanswered Ring Timeout for caller
-        if (isCaller) {
-          unansweredTimeoutRef.current = setTimeout(() => {
-            if (!remoteConnected && !isTerminated) {
-              discardCallSession("No answer from participant. Please try calling again.", true);
-            }
-          }, 45000);
+        let roomSnap = null;
+        try {
+          roomSnap = await getDoc(roomRef);
+        } catch (e) {
+          console.warn("Could not check room document:", e);
         }
 
+        if (!roomSnap || !roomSnap.exists() || roomSnap.data()?.status === 'ended') {
+          discardCallSession("This meeting link has expired or ended.", false);
+          return;
+        }
 
+        const roomData = roomSnap.data();
+        const isOpenRoom = !callId && roomData?.mode === 'open';
+        isOpenRoomRef.current = isOpenRoom;
 
-        if (isCaller) {
-          setStatusText(
-            calleeName
-              ? `Calling ${calleeName}... Waiting for answer...`
-              : `Room Created [${roomId}]. Waiting for participant...`
-          );
+        if (!isOpenRoom) {
+          // Direct Call WebRTC flow (100% untouched)
+          initPeerConnection({
+            localStream: stream,
+            isCaller,
+            isAudioOnly,
+            onRemoteStream: (remoteStream) => {
+              if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+                remoteVideoRef.current.srcObject = remoteStream;
+                remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
 
-          await setDoc(roomRef, {
-            offer: null,
-            answer: null,
-            callerCandidates: [],
-            calleeCandidates: [],
-            callerMirrored: isLocalMirrored,
-            calleeMirrored: false,
-            callType: isAudioOnly ? 'audio' : 'video',
-            createdAt: new Date().toISOString(),
-            status: 'active',
-            host: currentUser ? {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName
-            } : null
-          }, { merge: true });
+                // Route remote audio to user's preferred speaker if set
+                const preferred = getPreferredDevices();
+                if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
+                  remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+                }
 
-          const offer = await pc.createOffer();
-          const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
-          const rtcOffer = new RTCSessionDescription({
-            type: offer.type,
-            sdp
+                setRemoteConnected(true);
+                setIsReconnecting(false);
+                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+
+                if (unansweredTimeoutRef.current) {
+                  clearTimeout(unansweredTimeoutRef.current);
+                  unansweredTimeoutRef.current = null;
+                }
+              }
+            },
+            onIceCandidate: async (candidate) => {
+              const candidateStr = JSON.stringify(candidate.toJSON());
+              const field = isCaller ? 'callerCandidates' : 'calleeCandidates';
+              await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
+            },
+            onConnectionStateChange: (state) => {
+              console.log(`[WebRTC] Connection state: ${state}`);
+
+              if (state === 'connected' || state === 'completed') {
+                if (disconnectTimerRef.current) {
+                  clearTimeout(disconnectTimerRef.current);
+                  disconnectTimerRef.current = null;
+                }
+                if (iceRestartTimerRef.current) {
+                  clearTimeout(iceRestartTimerRef.current);
+                  iceRestartTimerRef.current = null;
+                }
+                setIsReconnecting(false);
+                setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+              } else if (state === 'disconnected' || state === 'failed') {
+                setIsReconnecting(true);
+                setStatusText("Network interruption... Reconnecting...");
+
+                // 14-second hard disconnect limit
+                if (!disconnectTimerRef.current) {
+                  disconnectTimerRef.current = setTimeout(() => {
+                    discardCallSession("Connection lost.", true);
+                  }, 14000);
+                }
+
+                // Automatic ICE restart by caller after 2.5s grace period
+                if (isCaller && !iceRestartTimerRef.current) {
+                  iceRestartTimerRef.current = setTimeout(async () => {
+                    if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+                      try {
+                        console.log("[WebRTC] Executing automatic ICE restart...");
+                        if (typeof pc.restartIce === 'function') {
+                          pc.restartIce();
+                        }
+                        const offer = await pc.createOffer({ iceRestart: true });
+                        const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+                        const rtcOffer = new RTCSessionDescription({
+                          type: offer.type,
+                          sdp
+                        });
+                        await pc.setLocalDescription(rtcOffer);
+                        await optimizeAudioSenders(pc, isAudioOnly);
+                        await updateDoc(roomRef, {
+                          offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
+                          answer: null
+                        });
+                      } catch (e) {
+                        console.warn("ICE restart failed:", e);
+                      }
+                    }
+                  }, 2500);
+                }
+              }
+            }
           });
-          await pc.setLocalDescription(rtcOffer);
-          await optimizeAudioSenders(pc, isAudioOnly);
-          await updateDoc(roomRef, { offer: { type: rtcOffer.type, sdp: rtcOffer.sdp } });
+
+          // 45-Second Unanswered Ring Timeout for caller
+          if (isCaller) {
+            unansweredTimeoutRef.current = setTimeout(() => {
+              if (!remoteConnected && !isTerminated) {
+                discardCallSession("No answer from participant. Please try calling again.", true);
+              }
+            }, 45000);
+          }
+
+          if (isCaller) {
+            setStatusText(
+              calleeName
+                ? `Calling ${calleeName}... Waiting for answer...`
+                : `Room Created [${roomId}]. Waiting for participant...`
+            );
+
+            await setDoc(roomRef, {
+              offer: null,
+              answer: null,
+              callerCandidates: [],
+              calleeCandidates: [],
+              callerMirrored: isLocalMirrored,
+              calleeMirrored: false,
+              callType: isAudioOnly ? 'audio' : 'video',
+              createdAt: new Date().toISOString(),
+              status: 'active',
+              host: currentUser ? {
+                uid: currentUser.uid,
+                displayName: currentUser.displayName
+              } : null
+            }, { merge: true });
+
+            const offer = await pc.createOffer();
+            const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+            const rtcOffer = new RTCSessionDescription({
+              type: offer.type,
+              sdp
+            });
+            await pc.setLocalDescription(rtcOffer);
+            await optimizeAudioSenders(pc, isAudioOnly);
+            await updateDoc(roomRef, { offer: { type: rtcOffer.type, sdp: rtcOffer.sdp } });
+
+            roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+              if (!snapshot.exists()) {
+                discardCallSession("Call ended: Room closed.", false);
+                return;
+              }
+
+              const data = snapshot.data();
+              if (!data) return;
+
+              if (data.callType && data.callType !== callType) {
+                setCallType(data.callType);
+              }
+
+              if (typeof data.calleeMirrored === 'boolean') {
+                setIsRemoteMirrored(data.calleeMirrored);
+              }
+
+              // Apply answer when it arrives and differs from last applied answer
+              if (data.answer && data.answer.sdp && data.answer.sdp !== lastAppliedAnswerSdp.current && pc && pc.signalingState === 'have-local-offer') {
+                lastAppliedAnswerSdp.current = data.answer.sdp;
+                const answerDesc = new RTCSessionDescription(data.answer);
+                await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
+                await optimizeAudioSenders(pc, isAudioOnly);
+                setStatusText("Participant joined! Connecting...");
+
+                if (unansweredTimeoutRef.current) {
+                  clearTimeout(unansweredTimeoutRef.current);
+                  unansweredTimeoutRef.current = null;
+                }
+              }
+
+              processRemoteCandidates(data.calleeCandidates);
+            });
+          } else {
+            // Joining as callee - await host offer
+            setStatusText(`Connecting to Room [${roomId}]...`);
+
+            const notFoundTimer = setTimeout(() => {
+              if (!remoteConnected && !isTerminated) {
+                discardCallSession(`Room "${roomId}" not found or host unavailable.`, false);
+              }
+            }, 15000);
+
+            roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+              if (!snapshot.exists()) {
+                if (lastAnsweredOfferSdp.current) {
+                  discardCallSession("The host has ended the call.", false);
+                }
+                return;
+              }
+
+              const data = snapshot.data();
+              if (!data) return;
+
+              if (data.callType && data.callType !== callType) {
+                setCallType(data.callType);
+                if (data.callType === 'audio') {
+                  setVoiceCallMode(true);
+                  setHasLocalVideo(false);
+                  setIsVideoOff(true);
+                  if (localStream) {
+                    localStream.getVideoTracks().forEach(track => {
+                      track.stop();
+                      localStream.removeTrack(track);
+                    });
+                    const audioTrack = localStream.getAudioTracks()[0];
+                    if (audioTrack && typeof audioTrack.applyConstraints === 'function') {
+                      audioTrack.applyConstraints(buildAudioConstraints(null, true)).catch(e => {
+                        console.warn("Could not apply speech constraints to audio track:", e);
+                      });
+                    }
+                  }
+                  if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = null;
+                  }
+                }
+              }
+
+              // When host's offer is populated and differs from last answered offer
+              if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc) {
+                try {
+                  lastAnsweredOfferSdp.current = data.offer.sdp;
+                  clearTimeout(notFoundTimer);
+
+                  const offerDesc = new RTCSessionDescription(data.offer);
+                  await pc.setRemoteDescription(offerDesc);
+
+                  const effectiveAudioOnly = isAudioOnly || data.callType === 'audio';
+                  const answer = await pc.createAnswer();
+                  const sdp = effectiveAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
+                  const rtcAnswer = new RTCSessionDescription({
+                    type: answer.type,
+                    sdp
+                  });
+                  await pc.setLocalDescription(rtcAnswer);
+                  await optimizeAudioSenders(pc, effectiveAudioOnly);
+
+                  await updateDoc(roomRef, {
+                    answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
+                    calleeMirrored: isLocalMirrored,
+                    guest: currentUser ? {
+                      uid: currentUser.uid,
+                      displayName: currentUser.displayName
+                    } : null
+                  });
+
+                  setStatusText(effectiveAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+                } catch (err) {
+                  console.error("Callee answer failed:", err);
+                  discardCallSession("Failed to establish audio/video stream.", false);
+                }
+              }
+
+              if (typeof data.callerMirrored === 'boolean') {
+                setIsRemoteMirrored(data.callerMirrored);
+              }
+
+              if (data.callerCandidates) {
+                processRemoteCandidates(data.callerCandidates);
+              }
+            }, (err) => {
+              console.error("Callee room listener error:", err);
+              discardCallSession("Network error connecting to room.", false);
+            });
+          }
+        } else {
+          // Open Lobby Room Flow (Wait-Until-2nd-Peer)
+          setStatusText("Waiting for the 2nd participant to join... Share the link to begin.");
+
+          // Register presence
+          await updateDoc(roomRef, {
+            [`peers.${myPeerId}`]: Date.now()
+          }).catch(async () => {
+            await setDoc(roomRef, {
+              peers: { [myPeerId]: Date.now() }
+            }, { merge: true }).catch(() => {});
+          });
+
+          // 15-second heartbeat
+          if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = setInterval(() => {
+            if (isTerminated || isLeavingRef.current) return;
+            updateDoc(roomRef, {
+              [`peers.${myPeerId}`]: Date.now()
+            }).catch(() => {});
+          }, 15000);
+
+          const applyOfferAndAnswer = async (offerData) => {
+            try {
+              lastAnsweredOfferSdp.current = offerData.sdp;
+              const offerDesc = new RTCSessionDescription(offerData);
+              await pc.setRemoteDescription(offerDesc);
+
+              const answer = await pc.createAnswer();
+              const sdp = isAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
+              const rtcAnswer = new RTCSessionDescription({
+                type: answer.type,
+                sdp
+              });
+              await pc.setLocalDescription(rtcAnswer);
+              await optimizeAudioSenders(pc, isAudioOnly);
+
+              await updateDoc(roomRef, {
+                answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
+                calleeMirrored: isLocalMirrored,
+                guest: currentUser ? {
+                  uid: currentUser.uid,
+                  displayName: currentUser.displayName
+                } : null
+              });
+
+              setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+            } catch (err) {
+              console.error("Open room callee answer failed:", err);
+            }
+          };
 
           roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
             if (!snapshot.exists()) {
@@ -646,52 +904,10 @@ export function CallStudioPage() {
             }
 
             const data = snapshot.data();
-            if (!data) return;
-
-            if (data.callType && data.callType !== callType) {
-              setCallType(data.callType);
-            }
-
-            if (typeof data.calleeMirrored === 'boolean') {
-              setIsRemoteMirrored(data.calleeMirrored);
-            }
-
-            // Apply answer when it arrives and differs from last applied answer
-            if (data.answer && data.answer.sdp && data.answer.sdp !== lastAppliedAnswerSdp.current && pc && pc.signalingState === 'have-local-offer') {
-              lastAppliedAnswerSdp.current = data.answer.sdp;
-              const answerDesc = new RTCSessionDescription(data.answer);
-              await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
-              await optimizeAudioSenders(pc, isAudioOnly);
-              setStatusText("Participant joined! Connecting...");
-
-              if (unansweredTimeoutRef.current) {
-                clearTimeout(unansweredTimeoutRef.current);
-                unansweredTimeoutRef.current = null;
-              }
-            }
-
-            processRemoteCandidates(data.calleeCandidates);
-          });
-        } else {
-          // Joining as callee - await host offer
-          setStatusText(`Connecting to Room [${roomId}]...`);
-
-          const notFoundTimer = setTimeout(() => {
-            if (!remoteConnected && !isTerminated) {
-              discardCallSession(`Room "${roomId}" not found or host unavailable.`, false);
-            }
-          }, 15000);
-
-          roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
-            if (!snapshot.exists()) {
-              if (lastAnsweredOfferSdp.current) {
-                discardCallSession("The host has ended the call.", false);
-              }
+            if (!data || data.status === 'ended') {
+              discardCallSession("This meeting link has expired or ended.", false);
               return;
             }
-
-            const data = snapshot.data();
-            if (!data) return;
 
             if (data.callType && data.callType !== callType) {
               setCallType(data.callType);
@@ -717,50 +933,148 @@ export function CallStudioPage() {
               }
             }
 
-            // When host's offer is populated and differs from last answered offer
-            if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc) {
-              try {
-                lastAnsweredOfferSdp.current = data.offer.sdp;
-                clearTimeout(notFoundTimer);
+            const peersObj = data.peers || {};
+            const now = Date.now();
+            const activePeerIds = Object.keys(peersObj)
+              .filter(pid => typeof peersObj[pid] === 'number' && (now - peersObj[pid]) < 40000)
+              .sort();
 
-                const offerDesc = new RTCSessionDescription(data.offer);
-                await pc.setRemoteDescription(offerDesc);
+            // When 2nd participant joins, initialize WebRTC
+            if (activePeerIds.length >= 2 && !webrtcStartedRef.current) {
+              webrtcStartedRef.current = true;
+              const effectiveIsCaller = activePeerIds[0] === myPeerId;
+              effectiveIsCallerRef.current = effectiveIsCaller;
 
-                const effectiveAudioOnly = isAudioOnly || data.callType === 'audio';
-                const answer = await pc.createAnswer();
-                const sdp = effectiveAudioOnly ? optimizeSdpForSpeech(answer.sdp) : optimizeSdpForMusic(answer.sdp);
-                const rtcAnswer = new RTCSessionDescription({
-                  type: answer.type,
+              initPeerConnection({
+                localStream: stream,
+                isCaller: effectiveIsCaller,
+                isAudioOnly,
+                onRemoteStream: (remoteStream) => {
+                  if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+                    remoteVideoRef.current.srcObject = remoteStream;
+                    remoteVideoRef.current.play().catch(e => console.warn("Remote play prevented:", e));
+
+                    const preferred = getPreferredDevices();
+                    if (typeof remoteVideoRef.current.setSinkId === 'function' && preferred.speakerId) {
+                      remoteVideoRef.current.setSinkId(preferred.speakerId).catch(() => {});
+                    }
+
+                    setRemoteConnected(true);
+                    setIsReconnecting(false);
+                    setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+                  }
+                },
+                onIceCandidate: async (candidate) => {
+                  const candidateStr = JSON.stringify(candidate.toJSON());
+                  const field = effectiveIsCaller ? 'callerCandidates' : 'calleeCandidates';
+                  await updateDoc(roomRef, { [field]: arrayUnion(candidateStr) }).catch(() => {});
+                },
+                onConnectionStateChange: (state) => {
+                  console.log(`[WebRTC OpenRoom] Connection state: ${state}`);
+
+                  if (state === 'connected' || state === 'completed') {
+                    if (disconnectTimerRef.current) {
+                      clearTimeout(disconnectTimerRef.current);
+                      disconnectTimerRef.current = null;
+                    }
+                    if (iceRestartTimerRef.current) {
+                      clearTimeout(iceRestartTimerRef.current);
+                      iceRestartTimerRef.current = null;
+                    }
+                    setIsReconnecting(false);
+                    setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+                  } else if (state === 'disconnected' || state === 'failed') {
+                    setIsReconnecting(true);
+                    setStatusText("Network interruption... Reconnecting...");
+
+                    if (!disconnectTimerRef.current) {
+                      disconnectTimerRef.current = setTimeout(() => {
+                        discardCallSession("Connection lost.", false);
+                      }, 14000);
+                    }
+
+                    if (effectiveIsCaller && !iceRestartTimerRef.current) {
+                      iceRestartTimerRef.current = setTimeout(async () => {
+                        if (pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+                          try {
+                            if (typeof pc.restartIce === 'function') {
+                              pc.restartIce();
+                            }
+                            const offer = await pc.createOffer({ iceRestart: true });
+                            const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+                            const rtcOffer = new RTCSessionDescription({
+                              type: offer.type,
+                              sdp
+                            });
+                            await pc.setLocalDescription(rtcOffer);
+                            await optimizeAudioSenders(pc, isAudioOnly);
+                            await updateDoc(roomRef, {
+                              offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
+                              answer: null
+                            });
+                          } catch (e) {
+                            console.warn("ICE restart failed:", e);
+                          }
+                        }
+                      }, 2500);
+                    }
+                  }
+                }
+              });
+
+              if (effectiveIsCaller) {
+                setStatusText("Participant joined! Connecting...");
+                const offer = await pc.createOffer();
+                const sdp = isAudioOnly ? optimizeSdpForSpeech(offer.sdp) : optimizeSdpForMusic(offer.sdp);
+                const rtcOffer = new RTCSessionDescription({
+                  type: offer.type,
                   sdp
                 });
-                await pc.setLocalDescription(rtcAnswer);
-                await optimizeAudioSenders(pc, effectiveAudioOnly);
-
+                await pc.setLocalDescription(rtcOffer);
+                await optimizeAudioSenders(pc, isAudioOnly);
                 await updateDoc(roomRef, {
-                  answer: { type: rtcAnswer.type, sdp: rtcAnswer.sdp },
-                  calleeMirrored: isLocalMirrored,
-                  guest: currentUser ? {
-                    uid: currentUser.uid,
-                    displayName: currentUser.displayName
-                  } : null
+                  offer: { type: rtcOffer.type, sdp: rtcOffer.sdp },
+                  callerMirrored: isLocalMirrored
                 });
-
-                setStatusText(effectiveAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
-              } catch (err) {
-                console.error("Callee answer failed:", err);
-                discardCallSession("Failed to establish audio/video stream.", false);
+              } else {
+                setStatusText("Connecting to participant...");
+                if (data.offer && data.offer.sdp && pc) {
+                  await applyOfferAndAnswer(data.offer);
+                }
               }
             }
 
-            if (typeof data.callerMirrored === 'boolean') {
-              setIsRemoteMirrored(data.callerMirrored);
-            }
-
-            if (data.callerCandidates) {
-              processRemoteCandidates(data.callerCandidates);
+            // Once WebRTC is running, handle signaling exchange
+            if (webrtcStartedRef.current) {
+              const effectiveIsCaller = effectiveIsCallerRef.current;
+              if (effectiveIsCaller) {
+                if (typeof data.calleeMirrored === 'boolean') {
+                  setIsRemoteMirrored(data.calleeMirrored);
+                }
+                if (data.answer && data.answer.sdp && data.answer.sdp !== lastAppliedAnswerSdp.current && pc && pc.signalingState === 'have-local-offer') {
+                  lastAppliedAnswerSdp.current = data.answer.sdp;
+                  const answerDesc = new RTCSessionDescription(data.answer);
+                  await pc.setRemoteDescription(answerDesc).catch(err => console.error("Error setting answer:", err));
+                  await optimizeAudioSenders(pc, isAudioOnly);
+                  setStatusText(isAudioOnly ? "Connected! Speech Mode active (Echo Cancellation ON)." : "Connected! High-fidelity audio active.");
+                }
+                if (data.calleeCandidates) {
+                  processRemoteCandidates(data.calleeCandidates);
+                }
+              } else {
+                if (typeof data.callerMirrored === 'boolean') {
+                  setIsRemoteMirrored(data.callerMirrored);
+                }
+                if (data.offer && data.offer.sdp && data.offer.sdp !== lastAnsweredOfferSdp.current && pc && pc.signalingState !== 'closed') {
+                  await applyOfferAndAnswer(data.offer);
+                }
+                if (data.callerCandidates) {
+                  processRemoteCandidates(data.callerCandidates);
+                }
+              }
             }
           }, (err) => {
-            console.error("Callee room listener error:", err);
+            console.error("Open room listener error:", err);
             discardCallSession("Network error connecting to room.", false);
           });
         }
@@ -773,9 +1087,23 @@ export function CallStudioPage() {
     startCall();
 
     const handleBeforeUnload = () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
       if (roomId) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-        deleteDoc(roomRef).catch(() => {});
+        if (isOpenRoomRef.current) {
+          updateDoc(roomRef, {
+            [`peers.${myPeerId}`]: deleteField(),
+            offer: null,
+            answer: null,
+            callerCandidates: [],
+            calleeCandidates: []
+          }).catch(() => {});
+        } else {
+          deleteDoc(roomRef).catch(() => {});
+        }
       }
       if (callId) {
         const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
@@ -797,10 +1125,23 @@ export function CallStudioPage() {
   // Leave Call action
   const handleLeaveCall = async () => {
     isLeavingRef.current = true;
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
     try {
       if (roomId) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-        await deleteDoc(roomRef);
+        if (isOpenRoomRef.current) {
+          await updateDoc(roomRef, {
+            status: 'ended',
+            offer: null,
+            answer: null
+          }).catch(() => {});
+          await deleteDoc(roomRef).catch(() => {});
+        } else {
+          await deleteDoc(roomRef);
+        }
       }
       if (callId) {
         const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
@@ -990,7 +1331,8 @@ export function CallStudioPage() {
       // Sync mirror state to Firestore room doc so peer's screen mirrors this video feed in real-time
       if (roomId) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
-        const mirrorField = isCaller ? 'callerMirrored' : 'calleeMirrored';
+        const isCallerRole = isOpenRoomRef.current ? effectiveIsCallerRef.current : isCaller;
+        const mirrorField = isCallerRole ? 'callerMirrored' : 'calleeMirrored';
         updateDoc(roomRef, { [mirrorField]: next }).catch(err => console.warn("Failed to sync mirror state:", err));
       }
 
@@ -1297,11 +1639,23 @@ export function CallStudioPage() {
 
         {/* Remote Placeholder when waiting */}
         {!remoteConnected && (
-          <div id="remotePlaceholder" className="absolute inset-0 flex flex-col items-center justify-center text-gray-600 bg-gray-950 z-10">
+          <div id="remotePlaceholder" className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 bg-gray-950 z-10 p-6 text-center">
             <Radio className="w-16 h-16 sm:w-20 sm:h-20 mb-3 opacity-25 animate-pulse text-purple-400" />
-            <span className="text-sm font-medium tracking-wide text-gray-500">
-              Awaiting Connection in Room {roomId}...
+            <span className="text-sm font-medium tracking-wide text-gray-300 max-w-sm">
+              {isOpenRoomRef.current
+                ? "Waiting for the 2nd participant to join... Share the link to begin."
+                : `Awaiting Connection in Room ${roomId}...`}
             </span>
+            {isOpenRoomRef.current && (
+              <button
+                type="button"
+                onClick={handleShareRoomLink}
+                className="mt-4 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-purple-900/40 transition-all active:scale-95 pointer-events-auto"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share Meeting Link</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -1332,6 +1686,13 @@ export function CallStudioPage() {
                 className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
               >
                 {copiedRoomId ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={handleShareRoomLink}
+                title="Share Room Link"
+                className="text-purple-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center ml-0.5"
+              >
+                <Share2 className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -1430,13 +1791,22 @@ export function CallStudioPage() {
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Room ID</span>
                 <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
               </div>
-              <button
-                onClick={copyRoomId}
-                title="Copy Room ID"
-                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-              >
-                {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={copyRoomId}
+                  title="Copy Room ID"
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+                >
+                  {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={handleShareRoomLink}
+                  title="Share Room Link"
+                  className="text-purple-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
 

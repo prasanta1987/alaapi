@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { db, appId, doc, getDoc } from '../services/firebase';
+import { db, appId, doc, getDoc, setDoc } from '../services/firebase';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { IosInstallModal } from '../components/IosInstallModal';
 import {
@@ -25,10 +25,27 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
   const [isCheckingRoom, setIsCheckingRoom] = useState(false);
   const navigate = useNavigate();
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
     // Generate clean 6-digit numeric Room ID for easy sharing
     const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
-    navigate(`/room/${newRoomId}?isCaller=true`, { replace: true });
+    try {
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newRoomId);
+      await setDoc(roomRef, {
+        mode: 'open',
+        status: 'open',
+        callType: 'video',
+        peers: {},
+        offer: null,
+        answer: null,
+        callerCandidates: [],
+        calleeCandidates: [],
+        createdAt: new Date().toISOString(),
+        host: currentUser ? { uid: currentUser.uid, displayName: currentUser.displayName } : null
+      });
+    } catch (err) {
+      console.warn("Could not pre-create open room in Firestore:", err);
+    }
+    navigate(`/room/${newRoomId}`, { replace: true });
   };
 
   const handleJoinRoom = async (e) => {

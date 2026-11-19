@@ -1,5 +1,5 @@
 // Alaapi PWA Service Worker
-const CACHE_NAME = 'alaapi-pwa-v7.1';
+const CACHE_NAME = 'alaapi-pwa-v7.2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
