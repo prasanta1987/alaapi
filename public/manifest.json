@@ -74,6 +74,18 @@
       ]
     },
     {
+      "name": "Pitch Monitor",
+      "short_name": "Pitch Monitor",
+      "description": "Start an Instant Pitch Monitor",
+      "url": "/tuner",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "Audio & Video Settings",
       "short_name": "Settings",
       "description": "Configure microphone, camera, and acoustic DSP settings",
