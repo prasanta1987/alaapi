@@ -91,7 +91,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   // 2. Student Standby Wake Lock (prevents phone screen from sleeping while waiting for teacher call)
   useEffect(() => {
     if (currentUser && role === 'student') {
-      requestScreenWakeLock().catch(() => {});
+      requestScreenWakeLock().catch(() => { });
       return () => {
         releaseScreenWakeLock();
       };
@@ -111,7 +111,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         callsSnap.forEach(d => {
           const data = d.data();
           if (data.createdAt && new Date(data.createdAt).getTime() < threeHoursAgo) {
-            deleteDoc(d.ref).catch(() => {});
+            deleteDoc(d.ref).catch(() => { });
           }
         });
 
@@ -120,7 +120,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         roomsSnap.forEach(d => {
           const data = d.data();
           if (data.createdAt && new Date(data.createdAt).getTime() < threeHoursAgo) {
-            deleteDoc(d.ref).catch(() => {});
+            deleteDoc(d.ref).catch(() => { });
           }
         });
       } catch (e) {
@@ -243,7 +243,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         teacherName: teacherName || '',
         teacherAssignedAt: new Date().toISOString()
       });
-      setRoleUpdateMsg(newTeacherId 
+      setRoleUpdateMsg(newTeacherId
         ? `Assigned student "${studentUser.displayName || 'Student'}" to teacher ${teacherName}`
         : `Removed teacher assignment from "${studentUser.displayName || 'Student'}"`);
       setTimeout(() => setRoleUpdateMsg(''), 4000);
@@ -284,8 +284,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   // For student view: resolve their assigned teacher (only if assigned to an active teacher)
   const currentStudentDoc = allUsers.find(u => u.id === currentUser?.uid);
   const assignedTeacherId = userProfile?.teacherId || currentStudentDoc?.teacherId;
-  const assignedTeacher = assignedTeacherId 
-    ? allUsers.find(u => u.id === assignedTeacherId && u.role === 'teacher') 
+  const assignedTeacher = assignedTeacherId
+    ? allUsers.find(u => u.id === assignedTeacherId && u.role === 'teacher')
     : null;
 
   // Filter students: Teachers only see their assigned students, Admins see all students
@@ -607,10 +607,10 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <GraduationCap className="w-5 h-5 text-emerald-400" />
-                My Assigned Students & 1-Click Calling
+                My Assigned Students
               </h3>
               <p className="text-xs text-gray-400">
-                Direct 1-click calling to your assigned students and academy administration.
+                Direct 1-click calling to your assigned students.
               </p>
             </div>
 
@@ -679,17 +679,17 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                           </span>
                         </div>
 
-                        {student.email && (
+                        {/* {student.email && (
                           <p className="text-xs text-gray-400 truncate font-mono">{student.email}</p>
                         )}
                         {student.phone && !student.email && (
                           <p className="text-xs text-gray-400 truncate">{student.phone}</p>
-                        )}
+                        )} */}
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/70 px-2 py-0.5 rounded border border-emerald-800/40">
+                          {/* <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/70 px-2 py-0.5 rounded border border-emerald-800/40">
                             <CheckCircle className="w-3 h-3 text-emerald-400" />
                             Assigned Student
-                          </span>
+                          </span> */}
                           {student.instrument && (
                             <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">
                               {student.instrument}
@@ -767,9 +767,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                             size="md"
                           />
                           <span
-                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${
-                              online ? 'bg-emerald-400' : 'bg-gray-500'
-                            }`}
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${online ? 'bg-emerald-400' : 'bg-gray-500'
+                              }`}
                           />
                         </div>
 
@@ -779,23 +778,21 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                               {admin.displayName || 'Administrator'}
                             </h5>
                             <span
-                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border shrink-0 ${
-                                online
-                                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                                  : 'bg-gray-900 text-gray-400 border-gray-700'
-                              }`}
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border shrink-0 ${online
+                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                                : 'bg-gray-900 text-gray-400 border-gray-700'
+                                }`}
                             >
                               <span
-                                className={`w-1 h-1 rounded-full ${
-                                  online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                                }`}
+                                className={`w-1 h-1 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+                                  }`}
                               />
                               {online ? 'Online' : 'Offline'}
                             </span>
                           </div>
-                          {admin.email && (
+                          {/* {admin.email && (
                             <p className="text-[11px] text-gray-400 truncate font-mono">{admin.email}</p>
-                          )}
+                          )} */}
                           <span className="inline-block mt-1 text-[9px] font-semibold text-purple-300 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800/50 uppercase">
                             Admin
                           </span>
@@ -933,9 +930,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                             size="md"
                           />
                           <span
-                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${
-                              online ? 'bg-emerald-400' : 'bg-gray-500'
-                            }`}
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-900 ${online ? 'bg-emerald-400' : 'bg-gray-500'
+                              }`}
                           />
                         </div>
                         <div className="min-w-0">
@@ -952,11 +948,10 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                       </div>
 
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
-                          online
-                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                            : 'bg-gray-900 text-gray-400 border-gray-700'
-                        }`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${online
+                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                          : 'bg-gray-900 text-gray-400 border-gray-700'
+                          }`}
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}

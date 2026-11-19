@@ -606,50 +606,50 @@ export function PitchMonitorPage() {
   });
 
   // Auto-start microphone once access has been previously granted or is active
-  useEffect(() => {
-    let isMounted = true;
+  // useEffect(() => {
+  //   let isMounted = true;
 
-    const checkAndAutoStartMic = async () => {
-      let isGranted = false;
-      try {
-        if (navigator.permissions && navigator.permissions.query) {
-          const perm = await navigator.permissions.query({ name: 'microphone' });
-          if (perm.state === 'granted') {
-            isGranted = true;
-          } else if (perm.state === 'denied') {
-            try {
-              localStorage.removeItem('alaapi_mic_permission_granted');
-            } catch {
-              // ignore
-            }
-            return;
-          }
-        }
-      } catch {
-        // Permissions API might throw or be unsupported on some mobile browsers
-      }
+  //   const checkAndAutoStartMic = async () => {
+  //     let isGranted = false;
+  //     try {
+  //       if (navigator.permissions && navigator.permissions.query) {
+  //         const perm = await navigator.permissions.query({ name: 'microphone' });
+  //         if (perm.state === 'granted') {
+  //           isGranted = true;
+  //         } else if (perm.state === 'denied') {
+  //           try {
+  //             localStorage.removeItem('alaapi_mic_permission_granted');
+  //           } catch {
+  //             // ignore
+  //           }
+  //           return;
+  //         }
+  //       }
+  //     } catch {
+  //       // Permissions API might throw or be unsupported on some mobile browsers
+  //     }
 
-      if (!isGranted) {
-        try {
-          if (localStorage.getItem('alaapi_mic_permission_granted') === 'true') {
-            isGranted = true;
-          }
-        } catch {
-          // ignore
-        }
-      }
+  //     if (!isGranted) {
+  //       try {
+  //         if (localStorage.getItem('alaapi_mic_permission_granted') === 'true') {
+  //           isGranted = true;
+  //         }
+  //       } catch {
+  //         // ignore
+  //       }
+  //     }
 
-      if (isGranted && isMounted && !userManuallyStoppedRef.current) {
-        handleStartMicRef.current?.();
-      }
-    };
+  //     if (isGranted && isMounted && !userManuallyStoppedRef.current) {
+  //       handleStartMicRef.current?.();
+  //     }
+  //   };
 
-    checkAndAutoStartMic();
+  //   checkAndAutoStartMic();
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  //   return () => {
+  //     isMounted = false;
+  //   };
+  // }, []);
 
   const onStartMicClick = () => {
     userManuallyStoppedRef.current = false;
