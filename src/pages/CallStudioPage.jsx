@@ -170,13 +170,16 @@ export function CallStudioPage() {
       disconnectTimerRef.current = null;
     }
 
-    const shareUrl = `${window.location.origin}/room/${roomId}`;
-    const shareText = `Join My Live Calling Session: ${shareUrl}`;
+    const publicOrigin = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'https://alaapi.web.app'
+      : window.location.origin;
+    const shareUrl = `${publicOrigin}/room/${roomId}`;
+    const baseText = `Join My Live Calling Session:`;
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'Alaapi Music Studio',
-          text: shareText,
+          text: baseText,
           url: shareUrl
         });
         return;
@@ -192,7 +195,7 @@ export function CallStudioPage() {
         }, 5000);
       }
     }
-    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`${baseText} ${shareUrl}`)}`, '_blank', 'noopener,noreferrer');
     setTimeout(() => {
       isSharingOrBackgroundRef.current = false;
     }, 5000);
@@ -989,7 +992,17 @@ export function CallStudioPage() {
           }
         } else {
           // Open Meeting Room Flow (Google Meet / Zoom style)
-          const storedToken = sessionStorage.getItem(`alaapi_host_token_${roomId}`);
+          let storedToken = null;
+          try {
+            const saved = JSON.parse(localStorage.getItem('alaapi_last_host_room') || 'null');
+            if (saved && saved.roomId === roomId) {
+              storedToken = saved.token;
+            } else {
+              storedToken = localStorage.getItem(`alaapi_host_token_${roomId}`) || sessionStorage.getItem(`alaapi_host_token_${roomId}`);
+            }
+          } catch (_) {
+            storedToken = sessionStorage.getItem(`alaapi_host_token_${roomId}`);
+          }
           const isRoomHost = Boolean(
             (storedToken && roomData?.hostToken && storedToken === roomData.hostToken) ||
             (currentUserRef.current && roomData?.host?.uid && roomData.host.uid === currentUserRef.current.uid)
@@ -1268,6 +1281,13 @@ export function CallStudioPage() {
         const callRef = doc(db, 'artifacts', appId, 'public', 'data', 'calls', callId);
         await deleteDoc(callRef);
       }
+      try {
+        localStorage.removeItem('alaapi_last_host_room');
+        if (roomId) {
+          localStorage.removeItem(`alaapi_host_token_${roomId}`);
+          sessionStorage.removeItem(`alaapi_host_token_${roomId}`);
+        }
+      } catch (_) { }
     } catch (e) {
       console.warn("Delete error on leave:", e);
     }

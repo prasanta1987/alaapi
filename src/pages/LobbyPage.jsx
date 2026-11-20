@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { db, appId, doc, getDoc, setDoc } from '../services/firebase';
+import { db, appId, doc, getDoc, setDoc, deleteDoc } from '../services/firebase';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { IosInstallModal } from '../components/IosInstallModal';
 import {
@@ -42,6 +42,8 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
     try {
       try {
         sessionStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
+        localStorage.setItem(`alaapi_host_token_${newRoomId}`, myHostToken);
+        localStorage.setItem('alaapi_last_host_room', JSON.stringify({ roomId: newRoomId, token: myHostToken }));
       } catch (_) { }
 
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newRoomId);
@@ -58,7 +60,10 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
         host: currentUser ? { uid: currentUser.uid, displayName: currentUser.displayName } : null
       });
 
-      const shareUrl = `${window.location.origin}/room/${newRoomId}`;
+      const publicOrigin = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'https://alaapi.web.app'
+        : window.location.origin;
+      const shareUrl = `${publicOrigin}/room/${newRoomId}`;
       setCreatedRoom({ roomId: newRoomId, shareUrl });
     } catch (err) {
       console.warn("Could not pre-create open room in Firestore:", err);
@@ -70,13 +75,12 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
 
   const handleShareWhatsApp = async () => {
     if (!createdRoom) return;
-    const shareText = `Join My Live Calling Session:`;
-    // const shareText = `Join my live singing class on Alaapi: ${createdRoom.shareUrl}`;
+    const baseText = `Join My Live Calling Session:`;
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'Alaapi Music Studio',
-          text: shareText,
+          text: baseText,
           url: createdRoom.shareUrl
         });
         return;
@@ -84,7 +88,25 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
         if (err.name === 'AbortError') return;
       }
     }
-    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`${baseText} ${createdRoom.shareUrl}`)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCancelCreatedRoom = async () => {
+    if (!createdRoom) return;
+    const roomIdToCancel = createdRoom.roomId;
+    setCreatedRoom(null);
+    try {
+      sessionStorage.removeItem(`alaapi_host_token_${roomIdToCancel}`);
+      localStorage.removeItem(`alaapi_host_token_${roomIdToCancel}`);
+      localStorage.removeItem('alaapi_last_host_room');
+    } catch (_) { }
+
+    try {
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomIdToCancel);
+      await deleteDoc(roomRef);
+    } catch (err) {
+      console.warn("Could not delete cancelled room document:", err);
+    }
   };
 
   const handleCopyLink = () => {
@@ -287,9 +309,9 @@ export function LobbyPage({ onOpenDeviceSetup, onOpenAudioSettings }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-gray-900 border border-purple-500/40 rounded-2xl sm:rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl flex flex-col gap-4 text-center relative">
             <button
-              onClick={() => handleStartClass()}
+              onClick={handleCancelCreatedRoom}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-              title="Close and Enter Room"
+              title="Cancel and Destroy Session"
             >
               <X className="w-5 h-5" />
             </button>
