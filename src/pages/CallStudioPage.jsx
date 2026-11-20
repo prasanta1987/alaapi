@@ -41,30 +41,18 @@ import {
   optimizeAudioSenders,
   resetIceCandidates
 } from '../services/webrtc';
-import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  RefreshCw,
-  PhoneOff,
-  Copy,
-  Check,
-  Radio,
-  AlertCircle,
-  Clock,
-  FlipHorizontal,
-  Maximize2,
-  Minimize2,
-  Scan,
-  Wifi,
-  Volume2,
-  VolumeX,
-  Headphones,
-  Phone,
-  Music,
-  Share2
-} from 'lucide-react';
+import { useCallTimer } from '../hooks/useCallTimer';
+import { useMicLevel } from '../hooks/useMicLevel';
+import { WhatsAppBanner } from '../components/studio/WhatsAppBanner';
+import { AudioOnlyStage } from '../components/studio/AudioOnlyStage';
+import { RemoteVideoControls } from '../components/studio/RemoteVideoControls';
+import { RemotePlaceholder } from '../components/studio/RemotePlaceholder';
+import { VolumePopover } from '../components/studio/VolumePopover';
+import { MobileTopBar } from '../components/studio/MobileTopBar';
+import { LocalVideoCard } from '../components/studio/LocalVideoCard';
+import { SessionInfoCard } from '../components/studio/SessionInfoCard';
+import { StudioControls } from '../components/studio/StudioControls';
+import { SessionErrorModal } from '../components/studio/SessionErrorModal';
 
 export function CallStudioPage() {
   const { roomId } = useParams();
@@ -80,7 +68,6 @@ export function CallStudioPage() {
   currentUserRef.current = currentUser;
   const { incomingCall } = useCall();
   const navigate = useNavigate();
-  const isWhatsAppBrowser = typeof navigator !== 'undefined' && /WhatsApp/i.test(navigator.userAgent);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -125,7 +112,6 @@ export function CallStudioPage() {
   }, [errorModalMsg, incomingCall, navigate]);
 
   // Health Diagnostics: Mic Level & Ping
-  const [micLevel, setMicLevel] = useState(0); // 0..100
   const [pingRtt, setPingRtt] = useState(null); // in ms
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [remoteVolume, setRemoteVolume] = useState(100); // 0..100% monitor volume
@@ -139,8 +125,9 @@ export function CallStudioPage() {
   const [cameras, setCameras] = useState([]);
   const [selectedCam, setSelectedCam] = useState('');
 
-  // Call running duration timer
-  const [callDuration, setCallDuration] = useState(0);
+  // Call duration timer & vocal dynamics mic analyzer hooks
+  const { callDuration, formatDuration } = useCallTimer();
+  const micLevel = useMicLevel(activeAudioStream, isMuted);
 
   // Navigation & lifecycle refs
   const isLeavingRef = useRef(false);
@@ -327,28 +314,7 @@ export function CallStudioPage() {
     };
   }, [showVolumePopover]);
 
-  // 1. Call Running Timer
-  useEffect(() => {
-    const timerInterval = setInterval(() => {
-      setCallDuration(prev => prev + 1);
-    }, 1000);
-
-    return () => {
-      clearInterval(timerInterval);
-    };
-  }, []);
-
-  const formatDuration = (totalSeconds) => {
-    const hrs = Math.floor(totalSeconds / 3600);
-    const mins = Math.floor((totalSeconds % 3600) / 60);
-    const secs = totalSeconds % 60;
-    if (hrs > 0) {
-      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // 2. Flat Navigation & Accidental Back-Swipe Interception Guard
+  // 1. Flat Navigation & Accidental Back-Swipe Interception Guard
   useEffect(() => {
     window.history.pushState(null, '', window.location.href);
 
@@ -367,147 +333,6 @@ export function CallStudioPage() {
       window.removeEventListener('popstate', handlePopState);
     };
   }, []);
-
-  // 3. Local Mic VU Level Analyzer (0..100) - Sensitive Studio Vocal Dynamics
-  useEffect(() => {
-    const streamToAnalyze = activeAudioStream || localStream;
-    if (isMuted || !streamToAnalyze) {
-      setMicLevel(0);
-      return;
-    }
-
-    const audioTracks = streamToAnalyze.getAudioTracks();
-    if (audioTracks.length === 0 || !audioTracks[0].enabled) {
-      setMicLevel(0);
-      return;
-    }
-
-    let isCancelled = false;
-    let micAudioCtx = null;
-    let animFrame = null;
-    let currentMeterLevel = 0;
-
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-
-      micAudioCtx = new AudioContextClass();
-
-      // Immediate attempt to resume
-      if (micAudioCtx.state === 'suspended') {
-        micAudioCtx.resume().catch(() => { });
-      }
-
-      // Resume context on any user interaction (pointerdown, touchstart, click, keydown)
-      const resumeAudioCtx = () => {
-        if (micAudioCtx && micAudioCtx.state === 'suspended') {
-          micAudioCtx.resume().catch(() => { });
-        }
-      };
-
-      window.addEventListener('pointerdown', resumeAudioCtx);
-      window.addEventListener('touchstart', resumeAudioCtx);
-      window.addEventListener('click', resumeAudioCtx);
-      window.addEventListener('keydown', resumeAudioCtx);
-
-      // Create an audio-only stream containing just the microphone track
-      const audioStream = new MediaStream([audioTracks[0]]);
-      const source = micAudioCtx.createMediaStreamSource(audioStream);
-
-      const analyser = micAudioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.25;
-      source.connect(analyser);
-
-      // Keep the audio graph processing in Chromium by connecting to a silent gain node
-      const silentGain = micAudioCtx.createGain();
-      silentGain.gain.value = 0;
-      analyser.connect(silentGain);
-      silentGain.connect(micAudioCtx.destination);
-
-      const timeData = new Uint8Array(analyser.fftSize);
-      const freqData = new Uint8Array(analyser.frequencyBinCount);
-
-      const updateMeter = () => {
-        if (isCancelled) return;
-
-        if (micAudioCtx.state === 'suspended') {
-          micAudioCtx.resume().catch(() => { });
-        }
-
-        // 1. Time-domain RMS calculation
-        analyser.getByteTimeDomainData(timeData);
-        let sumSquares = 0;
-        let peakAmplitude = 0;
-        for (let i = 0; i < timeData.length; i++) {
-          const norm = (timeData[i] - 128) / 128;
-          sumSquares += norm * norm;
-          const abs = Math.abs(norm);
-          if (abs > peakAmplitude) peakAmplitude = abs;
-        }
-        const rms = Math.sqrt(sumSquares / timeData.length);
-
-        // 2. Frequency-domain energy calculation in vocal presence band (100Hz - 3800Hz)
-        analyser.getByteFrequencyData(freqData);
-        let maxFreqVal = 0;
-        let speechBandSum = 0;
-        const maxBin = Math.min(freqData.length, 42);
-        for (let i = 1; i < maxBin; i++) {
-          speechBandSum += freqData[i];
-          if (freqData[i] > maxFreqVal) maxFreqVal = freqData[i];
-        }
-        const speechAvg = speechBandSum / Math.max(1, maxBin - 1);
-
-        // 3. Sensitive Vocal Studio dBFS Mapping
-        // With raw 48kHz audio (echoCancellation: false, autoGainControl: false),
-        // quiet whisper RMS is ~0.005, speech RMS is ~0.02..0.06, singing is ~0.08..0.35
-        let targetLevel = 0;
-        if (rms > 0.001 || speechAvg > 3) {
-          // Range: -50 dBFS (whisper) to 0 dBFS (peak) mapped to 0..100%
-          const db = 20 * Math.log10(Math.max(rms, 0.001));
-          const dbPercent = Math.max(0, Math.min(100, Math.round(((db + 50) / 50) * 100)));
-          const freqPercent = Math.max(0, Math.min(100, Math.round((speechAvg / 110) * 100)));
-          const peakPercent = Math.max(0, Math.min(100, Math.round(peakAmplitude * 110)));
-
-          targetLevel = Math.max(
-            dbPercent,
-            Math.round(freqPercent * 0.65 + peakPercent * 0.35)
-          );
-        }
-
-        // Smooth decay so meter animates smoothly like a professional VU needle
-        if (targetLevel >= currentMeterLevel) {
-          currentMeterLevel = targetLevel; // Instant attack
-        } else {
-          currentMeterLevel = Math.max(0, Math.round(currentMeterLevel * 0.84)); // Smooth decay
-        }
-
-        setMicLevel(currentMeterLevel);
-
-        animFrame = requestAnimationFrame(updateMeter);
-      };
-
-      updateMeter();
-
-      return () => {
-        isCancelled = true;
-        if (animFrame) cancelAnimationFrame(animFrame);
-        window.removeEventListener('pointerdown', resumeAudioCtx);
-        window.removeEventListener('touchstart', resumeAudioCtx);
-        window.removeEventListener('click', resumeAudioCtx);
-        window.removeEventListener('keydown', resumeAudioCtx);
-        try {
-          source.disconnect();
-          analyser.disconnect();
-          silentGain.disconnect();
-          micAudioCtx.close();
-        } catch (e) { }
-        setMicLevel(0);
-      };
-    } catch (e) {
-      console.warn("Could not start local mic level analyzer:", e);
-    }
-  }, [activeAudioStream, isMuted]);
 
   // 4. Live WebRTC Stats Ping Polling (every 3s when connected)
   useEffect(() => {
@@ -1481,143 +1306,10 @@ export function CallStudioPage() {
     });
   };
 
-  // 1. Microphone VU Meter (Audio pickup level & mute status)
-  const renderMicVuMeter = () => (
-    <div
-      className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow"
-      title={isMuted ? "Microphone is Muted" : !hasLocalAudio ? "No Microphone Detected" : `Mic Pickup: ${micLevel}%`}
-    >
-      {isMuted || !hasLocalAudio ? (
-        <MicOff className="w-3 h-3 text-red-400 shrink-0" />
-      ) : (
-        <Mic className="w-3 h-3 text-purple-400 shrink-0" />
-      )}
-
-      {/* 4-bar mini Mic VU meter */}
-      <div className="flex items-end gap-0.5 h-3 px-0.5">
-        {[1, 2, 3, 4].map(barIndex => {
-          const threshold = barIndex === 1 ? 6 : barIndex === 2 ? 25 : barIndex === 3 ? 55 : 80;
-          const active = !isMuted && hasLocalAudio && micLevel >= threshold;
-          return (
-            <span
-              key={barIndex}
-              style={{ height: `${barIndex * 2.5 + 2}px` }}
-              className={`w-1 rounded-full transition-all duration-75 ${isMuted || !hasLocalAudio
-                  ? 'bg-red-500/40'
-                  : active
-                    ? barIndex >= 4 ? 'bg-amber-400' : 'bg-emerald-400'
-                    : 'bg-gray-700'
-                }`}
-            />
-          );
-        })}
-      </div>
-
-      <span className="text-[10px] font-mono font-medium text-gray-300">
-        {isMuted ? (
-          <span className="text-red-400 font-semibold">Muted</span>
-        ) : !hasLocalAudio ? (
-          <span className="text-gray-500">None</span>
-        ) : (
-          `${micLevel}%`
-        )}
-      </span>
-    </div>
-  );
-
-  // 2. Network VU Meter (WebRTC latency / ping signal strength)
-  const renderNetworkVuMeter = () => {
-    let activeBars = 0;
-    let barColor = 'bg-gray-700';
-    let textColor = 'text-gray-400';
-    let label = '';
-
-    if (!remoteConnected) {
-      activeBars = 1;
-      barColor = 'bg-gray-700';
-      textColor = 'text-gray-500';
-      label = ''; // No "Waiting" text shown here
-    } else if (isReconnecting) {
-      activeBars = 1;
-      barColor = 'bg-amber-400 animate-pulse';
-      textColor = 'text-amber-400 font-semibold';
-      label = 'Recon...';
-    } else if (pingRtt === null) {
-      activeBars = 4;
-      barColor = 'bg-emerald-400';
-      textColor = 'text-emerald-400';
-      label = '48kHz';
-    } else {
-      label = `${pingRtt}ms`;
-      if (pingRtt < 120) {
-        activeBars = 4;
-        barColor = 'bg-emerald-400';
-        textColor = 'text-emerald-300';
-      } else if (pingRtt < 220) {
-        activeBars = 3;
-        barColor = 'bg-emerald-400';
-        textColor = 'text-emerald-300';
-      } else if (pingRtt < 380) {
-        activeBars = 2;
-        barColor = 'bg-amber-400';
-        textColor = 'text-amber-400';
-      } else {
-        activeBars = 1;
-        barColor = 'bg-red-500';
-        textColor = 'text-red-400';
-      }
-    }
-
-    return (
-      <div
-        className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow"
-        title={
-          !remoteConnected
-            ? "Waiting for participant to connect"
-            : isReconnecting
-              ? "Network interruption... Reconnecting..."
-              : `Network Round-Trip Time (RTT): ${pingRtt !== null ? `${pingRtt}ms` : 'High-fidelity 48kHz audio active'}`
-        }
-      >
-        <Wifi className={`w-3 h-3 shrink-0 ${textColor}`} />
-
-        {/* 4-bar cellular / signal VU meter */}
-        <div className="flex items-end gap-0.5 h-3 px-0.5">
-          {[1, 2, 3, 4].map(barIndex => {
-            const isActive = barIndex <= activeBars;
-            return (
-              <span
-                key={barIndex}
-                style={{ height: `${barIndex * 2.5 + 2}px` }}
-                className={`w-1 rounded-full transition-all duration-150 ${isActive ? barColor : 'bg-gray-800'
-                  }`}
-              />
-            );
-          })}
-        </div>
-
-        {label ? (
-          <span className={`text-[10px] font-mono font-medium ${textColor}`}>
-            {label}
-          </span>
-        ) : null}
-      </div>
-    );
-  };
-
   return (
     <div id="videoContainer" className="w-full h-full h-[100dvh] flex bg-gray-950 overflow-hidden select-none relative">
       {/* WhatsApp In-App Browser Banner */}
-      {isWhatsAppBrowser && (
-        <div className="absolute top-0 inset-x-0 z-50 bg-amber-500 text-gray-950 px-3 py-1.5 text-[11px] sm:text-xs font-semibold flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-2 truncate">
-            <AlertCircle className="w-4 h-4 shrink-0 text-gray-950" />
-            <span className="truncate">
-              Viewing in WhatsApp. For reliable camera & high-fidelity audio, tap <strong>⋮</strong> (top right) &gt; <strong>Open in Chrome</strong>.
-            </span>
-          </div>
-        </div>
-      )}
+      <WhatsAppBanner />
 
       {/* 1. Main Remote Stage */}
       <div id="remoteStage" className="relative flex-1 min-h-0 w-full h-full bg-black rounded-none overflow-hidden flex items-center justify-center">
@@ -1634,499 +1326,125 @@ export function CallStudioPage() {
 
         {/* Dedicated Audio-Only Acoustic Stage UI */}
         {isAudioOnly && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 z-10 select-none">
-            {/* Pulsing Concentric Audio Rings & Avatar */}
-            <div className="relative flex items-center justify-center mb-6">
-              {remoteConnected && (
-                <>
-                  <div className="absolute w-44 h-44 rounded-full bg-purple-600/10 border border-purple-500/20 animate-ping pointer-events-none" />
-                  <div className="absolute w-36 h-36 rounded-full bg-purple-500/15 border border-purple-500/30 animate-pulse pointer-events-none" />
-                </>
-              )}
-              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-purple-700 via-indigo-600 to-pink-500 p-1 shadow-2xl flex items-center justify-center z-10">
-                <div className="w-full h-full rounded-full bg-gray-950 flex flex-col items-center justify-center">
-                  <Headphones className="w-10 h-10 sm:w-12 sm:h-12 text-purple-400" />
-                </div>
-              </div>
-            </div>
-
-            {/* Remote Participant Name */}
-            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-1">
-              {calleeName || 'Audio Call'}
-            </h2>
-
-            {/* High-Fidelity Acoustic Status */}
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${remoteConnected
-                  ? 'bg-purple-950/60 text-purple-300 border-purple-500/40'
-                  : 'bg-gray-800 text-gray-400 border-gray-700'
-                }`}>
-                <span className={`w-2 h-2 rounded-full ${remoteConnected ? 'bg-purple-400 animate-pulse' : 'bg-gray-500'}`} />
-                {remoteConnected ? 'Studio Audio Live (48kHz Lossless)' : 'Connecting Audio Stream...'}
-              </span>
-            </div>
-
-            <p className="text-xs text-gray-400 font-mono">
-              Pure acoustic mode &bull; Camera hardware disabled
-            </p>
-          </div>
+          <AudioOnlyStage
+            calleeName={calleeName}
+            remoteConnected={remoteConnected}
+          />
         )}
 
         {/* Remote Video Actions: Vertical Icon-Only Dock (Mirror, Fit/Zoom, Fullscreen) */}
         {remoteConnected && !isAudioOnly && (
-          <div className={`absolute bottom-3 left-3 z-20 flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 ${isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-            }`}>
-            {/* Mirror Toggle */}
-            <button
-              onClick={() => setIsRemoteMirrored(prev => !prev)}
-              title={isRemoteMirrored ? "Disable Remote Mirror (Normal)" : "Mirror Remote Video Feed"}
-              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRemoteMirrored
-                  ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
-                  : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
-                }`}
-            >
-              <FlipHorizontal className="w-4 h-4" />
-            </button>
-
-            {/* Fit / Fill (Zoom) Toggle */}
-            <button
-              onClick={() => setIsRemoteZoomed(prev => !prev)}
-              title={isRemoteZoomed ? "Switch to Fit (Show entire video frame)" : "Switch to Fill / Zoom (Cover screen)"}
-              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRemoteZoomed
-                  ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
-                  : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
-                }`}
-            >
-              <Scan className="w-4 h-4" />
-            </button>
-
-            {/* Fullscreen Toggle */}
-            <button
-              onClick={handleToggleFullscreen}
-              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              className={`w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center shadow-lg transition-all active:scale-95 ${isFullscreen
-                  ? 'bg-purple-600/90 hover:bg-purple-500 border-purple-400 text-white shadow-purple-500/30'
-                  : 'bg-gray-900/85 hover:bg-gray-900 border-purple-500/30 text-purple-400 hover:text-white'
-                }`}
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-          </div>
+          <RemoteVideoControls
+            isRemoteMirrored={isRemoteMirrored}
+            onToggleMirror={() => setIsRemoteMirrored(prev => !prev)}
+            isRemoteZoomed={isRemoteZoomed}
+            onToggleZoom={() => setIsRemoteZoomed(prev => !prev)}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={handleToggleFullscreen}
+            isControlsDimmed={isControlsDimmed}
+          />
         )}
 
-        {/* Sleek Vertical Floating Speaker Volume Popover on Mobile (Cannot move out of screen) */}
-        {showVolumePopover && remoteConnected && (
-          <div
-            ref={volumePopoverRef}
-            data-volume-popover="true"
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-xl border border-purple-500/50 py-3.5 px-2.5 rounded-2xl shadow-2xl flex flex-col items-center gap-2.5 animate-fadeIn pointer-events-auto w-14 select-none touch-none"
-          >
-            {/* Percentage Display at Top */}
-            <span className="text-[11px] font-mono font-bold text-purple-300">
-              {remoteVolume}%
-            </span>
-
-            {/* Vertical Slider Track Container */}
-            <div
-              ref={sliderTrackRef}
-              onPointerDown={handleSliderPointerDown}
-              onTouchStart={handleSliderPointerDown}
-              className="relative w-6 h-32 bg-gray-800/90 rounded-full cursor-pointer shadow-inner border border-gray-700/60 flex flex-col justify-end p-0.5 overflow-hidden select-none touch-none"
-              title={`Drag up/down to adjust speaker volume: ${remoteVolume}%`}
-            >
-              {/* Level Fill Indicator (Grows from bottom to top) */}
-              <div
-                style={{ height: `${remoteVolume}%` }}
-                className={`w-full transition-all duration-75 rounded-full ${remoteVolume === 0
-                    ? 'bg-red-500/60'
-                    : 'bg-gradient-to-t from-purple-600 via-indigo-500 to-purple-400'
-                  }`}
-              />
-
-              {/* Glowing Thumb Dot */}
-              <div
-                style={{ bottom: `calc(${Math.min(94, Math.max(6, remoteVolume))}% - 6px)` }}
-                className="absolute left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-md border border-purple-400 pointer-events-none transition-all duration-75"
-              />
-
-              {/* Accessible Native Range Input for Keyboard Nav / Screen Readers */}
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={remoteVolume}
-                onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                style={{
-                  writingMode: 'vertical-lr',
-                  WebkitAppearance: 'slider-vertical',
-                  direction: 'rtl'
-                }}
-                className="sr-only"
-                aria-label="Speaker Volume"
-              />
-            </div>
-
-            {/* Mute / Unmute Button at Bottom */}
-            <button
-              type="button"
-              onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
-              className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
-              title={remoteVolume === 0 ? "Unmute Speaker" : "Mute Speaker"}
-            >
-              {remoteVolume === 0 ? (
-                <VolumeX className="w-4 h-4 text-red-400" />
-              ) : (
-                <Volume2 className="w-4 h-4 text-purple-400" />
-              )}
-            </button>
-          </div>
-        )}
+        {/* Sleek Vertical Floating Speaker Volume Popover on Mobile */}
+        <VolumePopover
+          show={showVolumePopover}
+          remoteConnected={remoteConnected}
+          remoteVolume={remoteVolume}
+          onVolumeChange={handleVolumeChange}
+          onSliderPointerDown={handleSliderPointerDown}
+          volumePopoverRef={volumePopoverRef}
+          sliderTrackRef={sliderTrackRef}
+        />
 
         {/* Remote Placeholder when waiting */}
         {!remoteConnected && (
-          <div id="remotePlaceholder" className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 bg-gray-950 z-10 p-6 text-center">
-            <Radio className="w-16 h-16 sm:w-20 sm:h-20 mb-3 opacity-25 animate-pulse text-purple-400" />
-            <span className="text-sm font-medium tracking-wide text-gray-300 max-w-sm">
-              {isOpenRoomRef.current
-                ? "Waiting for the 2nd participant to join... Share the link to begin."
-                : `Awaiting Connection in Room ${roomId}...`}
-            </span>
-            {isOpenRoomRef.current && (
-              <button
-                type="button"
-                onClick={handleShareRoomLink}
-                className="mt-4 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-purple-900/40 transition-all active:scale-95 pointer-events-auto"
-              >
-                <Share2 className="w-4 h-4" />
-                <span>Share Meeting Link</span>
-              </button>
-            )}
-          </div>
+          <RemotePlaceholder
+            isOpenRoom={isOpenRoomRef.current}
+            roomId={roomId}
+            onShareRoomLink={handleShareRoomLink}
+          />
         )}
 
-        {/* Mobile Top Overlay: Call Timer, Health Diagnostic Pill & Room ID (Auto-dims on mobile idle) */}
-        <div className={`mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none transition-opacity duration-300 ${isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-          }`}>
-          <div className="flex items-center gap-1.5 pointer-events-auto">
-            {/* Call Running Timer on Mobile / Video Feed */}
-            <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/30 shadow">
-              <Clock className="w-3 h-3 text-purple-400" />
-              <span>{formatDuration(callDuration)}</span>
-            </div>
-
-            {/* Dual VU Meters: Mic & Network */}
-            {renderMicVuMeter()}
-            {renderNetworkVuMeter()}
-          </div>
-
-          {/* Room ID Badge: Only shown before call is connected so user can copy & share it */}
-          {!remoteConnected && (
-            <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
-              <span className="text-sm font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
-              <button
-                onClick={copyRoomId}
-                title="Copy Room ID"
-                className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center"
-              >
-                {copiedRoomId ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-              <button
-                onClick={handleShareRoomLink}
-                title="Share Room Link"
-                className="text-purple-400 hover:text-white p-0.5 rounded hover:bg-gray-800 transition-colors flex items-center justify-center ml-0.5"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Mobile Top Overlay: Call Timer, Health Diagnostic Pill & Room ID */}
+        <MobileTopBar
+          callDuration={callDuration}
+          formatDuration={formatDuration}
+          micLevel={micLevel}
+          isMuted={isMuted}
+          hasLocalAudio={hasLocalAudio}
+          pingRtt={pingRtt}
+          remoteConnected={remoteConnected}
+          isReconnecting={isReconnecting}
+          roomId={roomId}
+          copiedRoomId={copiedRoomId}
+          onCopyRoomId={copyRoomId}
+          onShareRoomLink={handleShareRoomLink}
+          isControlsDimmed={isControlsDimmed}
+        />
       </div>
 
       {/* 2. Studio Side Panel (Sidebar on Desktop, Overlay on Mobile) */}
       <aside id="studioSidePanel" className="flex flex-col">
         {/* Top: User Camera Card */}
-        <div className="w-full flex flex-col gap-2 shrink-0">
-          <div className="sidebar-header items-center justify-between text-xs font-semibold text-gray-300 uppercase tracking-wider px-1">
-            <span className="flex items-center gap-1.5">
-              {hasLocalVideo ? (
-                <Video className="w-3.5 h-3.5 text-purple-400" />
-              ) : (
-                <VideoOff className="w-3.5 h-3.5 text-gray-500" />
-              )}
-              {hasLocalVideo ? 'Your Camera' : 'Camera (None)'}
-            </span>
-            <div className="flex items-center gap-1.5">
-              {/* Connected / Waiting Badge placed near the video feed */}
-              <span className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${remoteConnected
-                  ? 'bg-green-950/60 text-green-400 border-green-500/40'
-                  : 'bg-gray-800/80 text-gray-400 border-gray-700'
-                }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${remoteConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'
-                  }`} />
-                {remoteConnected ? 'Connected' : 'Waiting...'}
-              </span>
-
-              <span className={`flex items-center gap-1.5 text-[11px] font-normal lowercase ${hasLocalVideo ? 'text-green-400' : 'text-gray-400'
-                }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${hasLocalVideo ? 'bg-green-500 animate-pulse' : 'bg-gray-500'
-                  }`} />
-                {hasLocalVideo ? 'live' : 'inactive'}
-              </span>
-            </div>
-          </div>
-
-          <div id="localVideoContainer" className="pointer-events-auto relative bg-gray-950 rounded-xl overflow-hidden border border-gray-700/80 shadow-2xl shrink-0 self-end md:self-auto flex items-center justify-center min-h-[100px]">
-            <video
-              ref={localVideoRef}
-              id="localVideo"
-              className={`w-full h-full object-cover ${isLocalMirrored ? 'scale-x-[-1]' : ''} ${hasLocalVideo ? '' : 'hidden'}`}
-              autoPlay
-              playsInline
-              muted
-            />
-
-            {/* Mirror Toggle Button on Overlay Video Feed */}
-            {hasLocalVideo && (
-              <button
-                onClick={handleToggleLocalMirror}
-                title={isLocalMirrored ? "Switch to Normal (Unmirrored)" : "Switch to Mirrored"}
-                className="absolute top-1.5 left-1.5 z-20 bg-black/70 hover:bg-black/90 active:scale-95 text-gray-200 hover:text-white px-1.5 py-1 rounded-md backdrop-blur border border-white/20 transition-all flex items-center gap-1 shadow-md"
-              >
-                <FlipHorizontal className="w-3.5 h-3.5 text-purple-300" />
-                <span className="text-[9px] font-semibold hidden sm:inline">
-                  {isLocalMirrored ? 'Mirrored' : 'Normal'}
-                </span>
-              </button>
-            )}
-
-            {isAudioOnly ? (
-              <div className="flex flex-col items-center justify-center p-3 text-center text-gray-400 w-full h-full min-h-[90px]">
-                <Headphones className="w-6 h-6 mb-1 text-purple-400" />
-                <span className="text-[10px] font-semibold text-gray-300">Voice Mode</span>
-                <span className="text-[8px] text-gray-500 font-mono">Camera Off</span>
-              </div>
-            ) : !hasLocalVideo ? (
-              <div className="flex flex-col items-center justify-center p-4 text-center text-gray-500 w-full">
-                <VideoOff className="w-7 h-7 mb-1.5 text-purple-400/60" />
-                <span className="text-[11px] font-semibold text-gray-300">No Camera</span>
-                <span className="text-[9px] text-gray-500">Audio / View-Only Mode</span>
-              </div>
-            ) : null}
-            <div className="absolute bottom-1 right-1 sm:bottom-1.5 sm:right-1.5 bg-black/75 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded backdrop-blur border border-white/10 flex items-center gap-1">
-              <span>You</span>
-              {!hasLocalAudio && (
-                <span className="text-[9px] text-amber-400 font-medium">(No Mic)</span>
-              )}
-            </div>
-          </div>
-        </div>
+        <LocalVideoCard
+          localVideoRef={localVideoRef}
+          hasLocalVideo={hasLocalVideo}
+          hasLocalAudio={hasLocalAudio}
+          isLocalMirrored={isLocalMirrored}
+          onToggleLocalMirror={handleToggleLocalMirror}
+          remoteConnected={remoteConnected}
+          isAudioOnly={isAudioOnly}
+        />
 
         {/* Middle: Session Info (Clean Desktop Card with Room ID, Call Duration & Health) */}
-        <div className="sidebar-info-card flex-col gap-2.5 p-3.5 bg-gray-950/70 rounded-xl border border-gray-800 text-xs">
-          {/* Room ID Row: Only shown before call is connected so user can copy & share it */}
-          {!remoteConnected && (
-            <div className="flex items-center justify-between bg-gray-900/90 px-3 py-2 rounded-lg border border-purple-500/30">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Room ID</span>
-                <span className="text-base font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={copyRoomId}
-                  title="Copy Room ID"
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-                >
-                  {copiedRoomId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                </button>
-                <button
-                  onClick={handleShareRoomLink}
-                  title="Share Room Link"
-                  className="text-purple-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
-                >
-                  <Share2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
+        <SessionInfoCard
+          roomId={roomId}
+          remoteConnected={remoteConnected}
+          copiedRoomId={copiedRoomId}
+          onCopyRoomId={copyRoomId}
+          onShareRoomLink={handleShareRoomLink}
+          callDuration={callDuration}
+          formatDuration={formatDuration}
+          micLevel={micLevel}
+          isMuted={isMuted}
+          hasLocalAudio={hasLocalAudio}
+          pingRtt={pingRtt}
+          isReconnecting={isReconnecting}
+          remoteVolume={remoteVolume}
+          onVolumeChange={handleVolumeChange}
+          statusText={statusText}
+        />
 
-          {/* Call Running Timer & Dual VU Meters: Mic & Network */}
-          <div className={`flex items-center justify-between gap-2 ${!remoteConnected ? 'pt-1 border-t border-gray-800' : ''}`}>
-            <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-1 rounded-md border border-purple-500/30">
-              <Clock className="w-3.5 h-3.5 text-purple-400" />
-              <span>{formatDuration(callDuration)}</span>
-            </div>
-
-            {/* Dual VU Meters: Mic VU & Network VU (+ Tuner link) */}
-            <div className="flex items-center gap-1.5">
-              {renderMicVuMeter()}
-              {renderNetworkVuMeter()}
-              <button
-                type="button"
-                onClick={() => window.open('/tuner', '_blank')}
-                title="Open Swara & Pitch Tuner in a new tab"
-                className="text-gray-400 hover:text-purple-300 p-1 rounded hover:bg-gray-800 transition-colors ml-0.5"
-              >
-                <Music className="w-3.5 h-3.5 text-purple-400" />
-              </button>
-            </div>
-          </div>
-
-          {/* Remote Acoustic Monitor Volume Slider */}
-          {remoteConnected && (
-            <div className="flex items-center gap-2 pt-1 border-t border-gray-800">
-              <button
-                type="button"
-                onClick={() => handleVolumeChange(remoteVolume > 0 ? 0 : 100)}
-                title={remoteVolume === 0 ? "Unmute Monitor" : "Mute Monitor"}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                {remoteVolume === 0 ? (
-                  <VolumeX className="w-3.5 h-3.5 text-red-400" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5 text-purple-400" />
-                )}
-              </button>
-              <span className="text-[10px] font-medium text-gray-400 shrink-0">Monitor:</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={remoteVolume}
-                onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                title={`Acoustic monitor volume: ${remoteVolume}%`}
-              />
-              <span className="text-[10px] font-mono text-gray-300 w-7 text-right shrink-0">{remoteVolume}%</span>
-            </div>
-          )}
-
-          {/* Status Display */}
-          <div className="pt-1 border-t border-gray-800">
-            <p className="text-gray-300 font-mono text-[11px] leading-relaxed break-words">
-              {statusText}
-            </p>
-          </div>
-        </div>
-
-        {/* Bottom: In-Call Studio Controls (Auto-dims on mobile idle) */}
-        <div className="w-full flex flex-col gap-2 shrink-0">
-          <div className="sidebar-header text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
-            Studio Controls
-          </div>
-
-          <nav id="mediaControls" className={`pointer-events-auto shrink-0 transition-opacity duration-300 ${isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-            }`}>
-            {/* Mic Toggle */}
-            <button
-              onClick={handleAudioToggle}
-              disabled={!hasLocalAudio}
-              className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${!hasLocalAudio
-                  ? 'bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed opacity-60'
-                  : isMuted
-                    ? 'bg-red-600 hover:bg-red-500 border-red-700'
-                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                }`}
-              title={!hasLocalAudio ? "No microphone attached" : isMuted ? "Unmute Mic" : "Mute Mic"}
-            >
-              {isMuted || !hasLocalAudio ? <MicOff className="w-5 h-5 shrink-0" /> : <Mic className="w-5 h-5 shrink-0" />}
-              <span className="text-xs font-semibold">{!hasLocalAudio ? "No Mic" : isMuted ? "Unmute" : "Mute"}</span>
-            </button>
-
-            {/* Video Toggle (Only for Video Calls) */}
-            {!isAudioOnly && (
-              <button
-                onClick={handleVideoToggle}
-                disabled={!hasLocalVideo}
-                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${!hasLocalVideo
-                    ? 'bg-gray-900 border-gray-800 text-gray-500 cursor-not-allowed opacity-60'
-                    : isVideoOff
-                      ? 'bg-red-600 hover:bg-red-500 border-red-700'
-                      : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                  }`}
-                title={!hasLocalVideo ? "No camera attached" : isVideoOff ? "Start Video" : "Stop Video"}
-              >
-                {isVideoOff || !hasLocalVideo ? <VideoOff className="w-5 h-5 shrink-0" /> : <Video className="w-5 h-5 shrink-0" />}
-                <span className="text-xs font-semibold">{!hasLocalVideo ? "No Cam" : isVideoOff ? "Start Video" : "Stop Video"}</span>
-              </button>
-            )}
-
-            {/* Speaker / Monitor Volume Toggle Button (Mobile Overlay Dock only - hidden in sidebar view) */}
-            {remoteConnected && (
-              <button
-                ref={volumeBtnRef}
-                onClick={() => setShowVolumePopover(prev => !prev)}
-                className={`text-white shadow border transition-colors items-center justify-center gap-2 layout-overlay-volume-btn ${remoteVolume === 0
-                    ? 'bg-red-600 hover:bg-red-500 border-red-700'
-                    : showVolumePopover
-                      ? 'bg-purple-600 hover:bg-purple-500 border-purple-400'
-                      : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                  }`}
-                title={remoteVolume === 0 ? "Speaker Muted - Tap to unmute" : `Speaker Volume: ${remoteVolume}%`}
-              >
-                {remoteVolume === 0 ? (
-                  <VolumeX className="w-5 h-5 shrink-0 text-red-300" />
-                ) : (
-                  <Volume2 className="w-5 h-5 shrink-0 text-purple-300" />
-                )}
-                <span className="text-xs font-semibold">{remoteVolume === 0 ? "Muted" : `${remoteVolume}%`}</span>
-              </button>
-            )}
-
-            {/* In-Call Camera Switch (Only for Video Calls) */}
-            {!isAudioOnly && (
-              <button
-                id="switchCameraBtn"
-                onClick={handleFlipCamera}
-                disabled={!hasLocalVideo}
-                className={`text-white shadow border transition-colors flex items-center justify-center gap-2 ${!hasLocalVideo
-                    ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-40'
-                    : 'bg-gray-800 hover:bg-gray-700 border-gray-600'
-                  }`}
-                title={!hasLocalVideo ? "Camera not available" : "Switch / Flip Camera"}
-              >
-                <RefreshCw className="w-5 h-5 shrink-0" />
-                <span className="text-xs font-semibold">Switch Cam</span>
-              </button>
-            )}
-
-            {/* Leave Call */}
-            <button
-              onClick={handleLeaveCall}
-              className="bg-red-600 hover:bg-red-500 text-white shadow border border-red-700 transition-colors flex items-center justify-center gap-2"
-              title="Leave & End Call"
-            >
-              <PhoneOff className="w-5 h-5 shrink-0" />
-              <span className="text-xs font-semibold">Leave</span>
-            </button>
-          </nav>
-        </div>
+        {/* Bottom: In-Call Studio Controls */}
+        <StudioControls
+          hasLocalAudio={hasLocalAudio}
+          isMuted={isMuted}
+          onAudioToggle={handleAudioToggle}
+          hasLocalVideo={hasLocalVideo}
+          isVideoOff={isVideoOff}
+          onVideoToggle={handleVideoToggle}
+          isAudioOnly={isAudioOnly}
+          remoteConnected={remoteConnected}
+          remoteVolume={remoteVolume}
+          showVolumePopover={showVolumePopover}
+          onVolumeToggle={() => setShowVolumePopover(prev => !prev)}
+          volumeBtnRef={volumeBtnRef}
+          onFlipCamera={handleFlipCamera}
+          onLeaveCall={handleLeaveCall}
+          isControlsDimmed={isControlsDimmed}
+        />
       </aside>
 
       {/* Graceful Session Error Modal */}
-      {errorModalMsg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn select-none">
-          <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl relative">
-            <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center mx-auto mb-3 text-red-400">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-white mb-2">Class Session Notice</h3>
-            <p className="text-xs text-gray-300 mb-3 leading-relaxed">{errorModalMsg}</p>
-            <p className="text-[11px] text-purple-300/80 mb-5 font-mono">
-              Auto-returning to dashboard in {errorCountdown}s...
-            </p>
-            <button
-              onClick={() => {
-                setErrorModalMsg(null);
-                navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
-              }}
-              className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
-            >
-              Return to {currentUserRef.current ? 'Dashboard' : 'Lobby'} ({errorCountdown}s)
-            </button>
-          </div>
-        </div>
-      )}
+      <SessionErrorModal
+        errorModalMsg={errorModalMsg}
+        errorCountdown={errorCountdown}
+        onDismiss={() => {
+          setErrorModalMsg(null);
+          navigate(currentUserRef.current ? '/dashboard' : '/', { replace: true });
+        }}
+        isLoggedIn={!!currentUserRef.current}
+      />
     </div>
   );
 }

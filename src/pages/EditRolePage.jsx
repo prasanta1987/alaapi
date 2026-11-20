@@ -25,16 +25,11 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowLeft,
-  ArrowRight,
-  Mail,
-  UserCheck,
   RefreshCw,
   Info,
   Phone,
   Video,
   Trash2,
-  X,
-  Sparkles,
   Network
 } from 'lucide-react';
 import { UserAvatar } from '../components/UserAvatar';
