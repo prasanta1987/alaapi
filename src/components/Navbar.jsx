@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { IosInstallModal } from './IosInstallModal';
-import { LogOut, User, Shield, GraduationCap, Music, Settings2, Download } from 'lucide-react';
+import { LogOut, User, Shield, GraduationCap, Music, Settings2, Download, Network } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 
 export function Navbar({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }) {
@@ -75,19 +75,33 @@ export function Navbar({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }
               )
             }
 
-            {/* Hidden Admin-Only Roles Link */}
+            {/* Hidden Admin-Only Links */}
             {isAdmin && (
-              <Link
-                to="/editroll"
-                title="Admin Role Management"
-                className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs sm:text-sm ${location.pathname === '/editroll' || location.pathname === '/editroles'
-                  ? 'bg-purple-900/60 text-purple-300 font-semibold border border-purple-500/40'
-                  : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/40'
-                  }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Edit Roles</span>
-              </Link>
+              <>
+                <Link
+                  to="/orgchart"
+                  title="Organization Tree Chart View"
+                  className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs sm:text-sm ${location.pathname === '/orgchart'
+                    ? 'bg-purple-900/60 text-purple-300 font-semibold border border-purple-500/40'
+                    : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/40'
+                    }`}
+                >
+                  <Network className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Org Chart</span>
+                </Link>
+
+                <Link
+                  to="/editroll"
+                  title="Admin Role Management"
+                  className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs sm:text-sm ${location.pathname === '/editroll' || location.pathname === '/editroles'
+                    ? 'bg-purple-900/60 text-purple-300 font-semibold border border-purple-500/40'
+                    : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/40'
+                    }`}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Edit Roles</span>
+                </Link>
+              </>
             )}
 
             {/* Studio, Hardware Devices & Audio Settings Trigger */}

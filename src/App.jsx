@@ -6,6 +6,7 @@ import { Navbar } from './components/Navbar';
 import { LobbyPage } from './pages/LobbyPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EditRolePage } from './pages/EditRolePage';
+import { OrgChartPage } from './pages/OrgChartPage';
 import { CallStudioPage } from './pages/CallStudioPage';
 import { PitchMonitorPage } from './pages/PitchMonitorPage';
 import { IncomingCallModal } from './components/IncomingCallModal';
@@ -121,6 +122,7 @@ export function AppContent() {
             />
             <Route path="/editroll" element={<EditRolePage />} />
             <Route path="/editroles" element={<EditRolePage />} />
+            <Route path="/orgchart" element={<OrgChartPage />} />
             <Route
               path="*"
               element={
