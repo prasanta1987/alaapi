@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth, isUserOnline } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
@@ -36,7 +36,9 @@ import {
   Sparkles,
   X,
   Layers,
-  HelpCircle
+  HelpCircle,
+  UnfoldVertical,
+  FoldVertical
 } from 'lucide-react';
 import { UserAvatar } from '../components/UserAvatar';
 import { DemotionModal, PromotionModal } from '../components/RoleChangeModals';
@@ -47,10 +49,33 @@ export function OrgChartPage() {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchContainerRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [collapsedTeachers, setCollapsedTeachers] = useState({}); // { [teacherId]: boolean }
   const [feedback, setFeedback] = useState(null);
   const [updatingUid, setUpdatingUid] = useState(null);
+
+  // Close search popout when clicking outside or pressing Escape
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsSearchOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSearchOpen]);
 
   // Modals for Role Promotion & Demotion
   const [demotionTarget, setDemotionTarget] = useState(null);
@@ -333,12 +358,12 @@ export function OrgChartPage() {
   const assignedCount = users.length - admins.length - teachers.length - unassignedStudents.length;
 
   return (
-    <div className="min-h-full flex flex-col bg-gray-950 text-gray-100 select-none pb-12">
+    <div className="h-full w-full flex flex-col bg-gray-950 text-gray-100 select-none overflow-hidden relative">
       {/* Top Banner / Header */}
-      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 sm:px-8 py-4 shrink-0">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 sm:px-8 py-3.5 shrink-0">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-0.5">
               <Link
                 to="/editroll"
                 className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
@@ -346,122 +371,53 @@ export function OrgChartPage() {
               >
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <div className="w-8 h-8 rounded-xl bg-purple-900/50 border border-purple-500/50 flex items-center justify-center text-purple-300 shadow-md">
+              <div className="w-7 h-7 rounded-xl bg-purple-900/50 border border-purple-500/50 flex items-center justify-center text-purple-300 shadow-md">
                 <Network className="w-4 h-4" />
               </div>
-              <h1 className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
                 Alaapi Organization Chart
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300 border border-purple-500/40 uppercase tracking-widest">
                   Tree View
                 </span>
               </h1>
             </div>
-            <p className="text-xs text-gray-400 ml-7">
+            <p className="text-[11px] text-gray-400 ml-6">
               Live hierarchy mapping platform administrators, instructors, and their assigned students.
             </p>
           </div>
 
           {/* Quick Stats Badges & Switch View Link */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-600/40 text-purple-300 font-bold flex items-center gap-1.5 shadow-sm">
-              <Shield className="w-3.5 h-3.5 text-purple-400" />
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-xl bg-purple-950/60 border border-purple-600/40 text-purple-300 font-bold flex items-center gap-1.5 shadow-sm text-[11px]">
+              <Shield className="w-3 h-3 text-purple-400" />
               <span>{admins.length} Admins</span>
             </span>
 
-            <span className="px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-600/40 text-emerald-300 font-bold flex items-center gap-1.5 shadow-sm">
-              <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-600/40 text-emerald-300 font-bold flex items-center gap-1.5 shadow-sm text-[11px]">
+              <GraduationCap className="w-3 h-3 text-emerald-400" />
               <span>{teachers.length} Teachers</span>
             </span>
 
-            <span className="px-3 py-1.5 rounded-xl bg-blue-950/60 border border-blue-600/40 text-blue-300 font-bold flex items-center gap-1.5 shadow-sm">
-              <Music className="w-3.5 h-3.5 text-blue-400" />
+            <span className="px-2.5 py-1 rounded-xl bg-blue-950/60 border border-blue-600/40 text-blue-300 font-bold flex items-center gap-1.5 shadow-sm text-[11px]">
+              <Music className="w-3 h-3 text-blue-400" />
               <span>{assignedCount} Assigned Students</span>
             </span>
 
             {unassignedStudents.length > 0 && (
-              <span className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-600/40 text-amber-300 font-bold flex items-center gap-1.5 shadow-sm animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              <span className="px-2.5 py-1 rounded-xl bg-amber-950/60 border border-amber-600/40 text-amber-300 font-bold flex items-center gap-1.5 shadow-sm animate-pulse text-[11px]">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
                 <span>{unassignedStudents.length} Unassigned</span>
               </span>
             )}
 
             <Link
               to="/editroll"
-              className="ml-auto md:ml-2 px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white border border-gray-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+              className="ml-auto md:ml-2 px-2.5 py-1 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white border border-gray-700 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm"
               title="Switch to standard Table View"
             >
               <Layers className="w-3.5 h-3.5 text-purple-400" />
               <span>Table View</span>
             </Link>
-          </div>
-        </div>
-
-        {/* Toolbar: Search, Expand/Collapse, and Zoom Controls */}
-        <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-gray-800/80 flex flex-col sm:flex-row items-center justify-between gap-3">
-          {/* Search bar */}
-          <div className="relative w-full sm:w-72">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search user, teacher, email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500 shadow-inner"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <button
-              onClick={expandAll}
-              className="px-2.5 py-1.5 rounded-lg bg-gray-800/80 hover:bg-gray-800 text-gray-300 hover:text-white text-xs font-medium border border-gray-700/80 transition-colors"
-            >
-              Expand All
-            </button>
-            <button
-              onClick={collapseAll}
-              className="px-2.5 py-1.5 rounded-lg bg-gray-800/80 hover:bg-gray-800 text-gray-300 hover:text-white text-xs font-medium border border-gray-700/80 transition-colors"
-            >
-              Collapse All
-            </button>
-
-            <div className="h-4 w-px bg-gray-800 mx-1" />
-
-            {/* Zoom Controls */}
-            <div className="flex items-center bg-gray-900 border border-gray-800 rounded-xl p-0.5">
-              <button
-                onClick={() => setZoom(z => Math.max(0.6, Number((z - 0.1).toFixed(1))))}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-                title="Zoom Out"
-              >
-                <ZoomOut className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[11px] font-mono text-gray-300 px-2 min-w-[42px] text-center">
-                {Math.round(zoom * 100)}%
-              </span>
-              <button
-                onClick={() => setZoom(z => Math.min(1.4, Number((z + 0.1).toFixed(1))))}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-                title="Zoom In"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setZoom(1)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-                title="Reset Zoom"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            </div>
           </div>
         </div>
       </header>
@@ -484,14 +440,14 @@ export function OrgChartPage() {
       )}
 
       {/* Interactive Org Chart Canvas */}
-      <main className="flex-1 overflow-x-auto overflow-y-auto p-6 md:p-10 flex flex-col items-center">
+      <main className="flex-1 w-full overflow-x-auto overflow-y-auto overscroll-contain p-4 sm:p-6 md:p-10 pl-16 sm:pl-20 pb-20 touch-pan-x touch-pan-y">
         <div
           style={{
             transform: `scale(${zoom})`,
             transformOrigin: 'top center',
             transition: 'transform 0.15s ease-out'
           }}
-          className="flex flex-col items-center min-w-max pb-16"
+          className="w-fit min-w-full mx-auto flex flex-col items-center pb-16"
         >
           {/* LEVEL 1: ADMINS TIER */}
           <section className="flex flex-col items-center mb-2">
@@ -597,8 +553,8 @@ export function OrgChartPage() {
               <div
                 className="h-0.5 bg-emerald-500/50 mb-4"
                 style={{
-                  width: `calc(100% - 200px)`,
-                  maxWidth: `${teachers.length * 360}px`
+                  width: `${Math.max(0, (teachers.length - 1) * 352)}px`,
+                  maxWidth: '95%'
                 }}
               />
             )}
@@ -966,6 +922,111 @@ export function OrgChartPage() {
           )}
         </div>
       </main>
+
+      {/* Left-Floating Vertical Canvas Toolbar */}
+      <div className="fixed left-3 sm:left-4 top-1/2 -translate-y-1/2 z-40 bg-gray-900/95 backdrop-blur-md border border-gray-750 rounded-2xl p-1.5 shadow-2xl shadow-black/90 flex flex-col items-center gap-2 select-none animate-in fade-in slide-in-from-left-4 duration-300">
+        {/* 1. Search Icon with Expandable Popout Input */}
+        <div className="relative" ref={searchContainerRef}>
+          <button
+            onClick={() => setIsSearchOpen(prev => !prev)}
+            className={`p-2 rounded-xl transition-all cursor-pointer relative ${
+              isSearchOpen || searchTerm
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                : 'bg-gray-800/80 hover:bg-gray-750 text-gray-300 hover:text-white'
+            }`}
+            title={isSearchOpen ? 'Close Search' : 'Search users (Click to expand)'}
+          >
+            <Search className="w-4 h-4" />
+            {searchTerm && !isSearchOpen && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-purple-400 ring-2 ring-gray-900 animate-pulse" />
+            )}
+          </button>
+
+          {/* Expandable text entry box to the right */}
+          {isSearchOpen && (
+            <div className="absolute left-full ml-2.5 top-1/2 -translate-y-1/2 z-50 flex items-center bg-gray-900/98 backdrop-blur-md border border-purple-500/50 rounded-2xl p-1.5 pl-3 pr-2 shadow-2xl shadow-black/95 w-56 sm:w-72 animate-in fade-in slide-in-from-left-2 duration-200">
+              <Search className="w-3.5 h-3.5 text-purple-400 shrink-0 mr-2" />
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search name, email, role..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-transparent border-none text-xs text-white placeholder-gray-500 focus:outline-none"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="p-1 text-gray-400 hover:text-white shrink-0 mr-1 cursor-pointer"
+                  title="Clear text"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                onClick={() => setIsSearchOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 shrink-0 cursor-pointer"
+                title="Close search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="w-5 h-px bg-gray-800" />
+
+        {/* 2. Expand All & Collapse All Float Icons */}
+        <div className="flex flex-col items-center gap-1.5">
+          <button
+            onClick={expandAll}
+            className="p-2 rounded-xl bg-gray-800/80 hover:bg-gray-750 active:scale-95 text-gray-300 hover:text-white transition-all shadow-sm cursor-pointer"
+            title="Expand All Teachers"
+          >
+            <UnfoldVertical className="w-4 h-4 text-emerald-400" />
+          </button>
+          <button
+            onClick={collapseAll}
+            className="p-2 rounded-xl bg-gray-800/80 hover:bg-gray-750 active:scale-95 text-gray-300 hover:text-white transition-all shadow-sm cursor-pointer"
+            title="Collapse All Teachers"
+          >
+            <FoldVertical className="w-4 h-4 text-amber-400" />
+          </button>
+        </div>
+
+        <div className="w-5 h-px bg-gray-800" />
+
+        {/* 3. Vertical Zoom Controls */}
+        <div className="flex flex-col items-center gap-1 bg-gray-950/80 border border-gray-800 rounded-xl p-1 shadow-inner">
+          <button
+            onClick={() => setZoom(z => Math.min(1.4, Number((z + 0.1).toFixed(1))))}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-850 transition-colors cursor-pointer"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+
+          <span className="text-[10px] font-mono font-bold text-gray-300 py-0.5 leading-none select-none text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+
+          <button
+            onClick={() => setZoom(z => Math.max(0.5, Number((z - 0.1).toFixed(1))))}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-850 transition-colors cursor-pointer"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => setZoom(1)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-850 transition-colors cursor-pointer mt-0.5 border-t border-gray-850"
+            title="Reset Zoom (100%)"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* Shared Demotion & Promotion Confirmation Modals */}
       <DemotionModal

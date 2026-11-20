@@ -77,6 +77,8 @@ export function AppContent() {
   }, []);
 
   const isTunerPage = location.pathname === '/tuner';
+  const isOrgChartPage = location.pathname === '/orgchart';
+  const isFullCanvasPage = isTunerPage || isOrgChartPage;
   const hideNavbar = isInCall || isTunerPage;
 
   return (
@@ -96,7 +98,7 @@ export function AppContent() {
           </Routes>
         </div>
       ) : (
-        <main className={`flex-1 w-full ${isTunerPage ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
+        <main className={`flex-1 w-full ${isFullCanvasPage ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <Routes>
             <Route
               path="/"
