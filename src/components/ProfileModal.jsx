@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { X, Save, User, Phone, Music, FileText } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
@@ -13,14 +13,22 @@ export function ProfileModal({ isOpen, onClose }) {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  const hasInitializedRef = useRef(false);
+
   useEffect(() => {
-    if (userProfile) {
-      setDisplayName(userProfile.displayName || currentUser?.displayName || '');
-      setPhone(userProfile.phone || '');
-      setInstrument(userProfile.instrument || 'Vocals');
-      setBio(userProfile.bio || '');
+    if (!isOpen) {
+      hasInitializedRef.current = false;
+      return;
     }
-  }, [userProfile, currentUser]);
+
+    if (isOpen && !hasInitializedRef.current && (userProfile || currentUser)) {
+      setDisplayName(userProfile?.displayName || currentUser?.displayName || '');
+      setPhone(userProfile?.phone || '');
+      setInstrument(userProfile?.instrument || 'Vocals');
+      setBio(userProfile?.bio || '');
+      hasInitializedRef.current = true;
+    }
+  }, [isOpen, userProfile, currentUser]);
 
   if (!isOpen || !currentUser) return null;
 

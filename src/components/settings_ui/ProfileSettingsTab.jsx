@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../UserAvatar';
 import {
@@ -15,20 +15,23 @@ import {
 export function ProfileSettingsTab({ onSaved }) {
   const { currentUser, userProfile, updateUserProfile, loginWithGoogle } = useAuth();
 
-  const [displayName, setDisplayName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [instrument, setInstrument] = useState('');
-  const [bio, setBio] = useState('');
+  const [displayName, setDisplayName] = useState(() => userProfile?.displayName || currentUser?.displayName || '');
+  const [phone, setPhone] = useState(() => userProfile?.phone || '');
+  const [instrument, setInstrument] = useState(() => userProfile?.instrument || 'Indian Classical Vocals');
+  const [bio, setBio] = useState(() => userProfile?.bio || '');
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  const hasInitializedRef = useRef(!!userProfile);
+
   useEffect(() => {
-    if (userProfile) {
+    if (!hasInitializedRef.current && userProfile) {
       setDisplayName(userProfile.displayName || currentUser?.displayName || '');
       setPhone(userProfile.phone || '');
       setInstrument(userProfile.instrument || 'Indian Classical Vocals');
       setBio(userProfile.bio || '');
-    } else if (currentUser) {
+      hasInitializedRef.current = true;
+    } else if (!hasInitializedRef.current && currentUser && !userProfile) {
       setDisplayName(currentUser.displayName || '');
     }
   }, [userProfile, currentUser]);
