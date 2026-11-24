@@ -63,28 +63,13 @@ export function SwaralipiPage({ mode }) {
   const isTeacher = userProfile?.role === 'teacher' || isAdmin;
 
   // Sheet State
-  const [title, setTitle] = useState('সরগম ও মীড় অভ্যাস');
-  const [taal, setTaal] = useState('kaharwa');
+  const [title, setTitle] = useState('');
+  const [taal, setTaal] = useState('free');
   const [scaleOffset, setScaleOffset] = useState(10); // Sa = B♭ (Kali 5)
   const [bpm, setBpm] = useState(90);
   const [rows, setRows] = useState(() => {
-    const beats = TAALS.kaharwa.beats;
-    const r1 = createEmptyRow(beats);
-    const r2 = createEmptyRow(beats);
-    const sample = [
-      { swara: 'স', semi: 0, oct: 0, lyric: 'সা', meend: false },
-      { swara: 'র', semi: 2, oct: 0, lyric: 'রে', meend: false },
-      { swara: 'গ', semi: 4, oct: 0, lyric: 'গা', meend: true },
-      { swara: 'প', semi: 7, oct: 0, lyric: 'পা', meend: false },
-      { swara: 'া', semi: -1, oct: 0, lyric: '', meend: false },
-      { swara: 'ধ', semi: 9, oct: 0, lyric: 'ধা', meend: false },
-      { swara: 'ন', semi: 11, oct: 0, lyric: 'নি', meend: true },
-      { swara: 'স', semi: 0, oct: 1, lyric: 'সা', meend: false }
-    ];
-    for (let i = 0; i < Math.min(beats, sample.length); i++) {
-      r1[i] = { ...sample[i] };
-    }
-    return [r1, r2];
+    const beats = TAALS.free.beats;
+    return [createEmptyRow(beats), createEmptyRow(beats)];
   });
 
   const [cursor, setCursor] = useState({ r: 0, c: 0 });
@@ -165,8 +150,8 @@ export function SwaralipiPage({ mode }) {
         const snap = await getDoc(docRef);
         if (snap.exists() && !isCancelled) {
           const data = snap.data();
-          setTitle(data.title || 'স্বরলিপি');
-          setTaal(data.taal || 'kaharwa');
+          setTitle(data.title || '');
+          setTaal(data.taal || 'free');
           setScaleOffset(typeof data.scaleOffset === 'number' ? data.scaleOffset : 10);
           setBpm(data.bpm || 90);
           setTeacherId(data.teacherId || '');
@@ -566,7 +551,7 @@ export function SwaralipiPage({ mode }) {
     });
   }
 
-  const currentTaalObj = TAALS[taal] || TAALS.kaharwa;
+  const currentTaalObj = TAALS[taal] || TAALS.free;
 
   if (loadingDoc) {
     return (
@@ -807,10 +792,10 @@ export function SwaralipiPage({ mode }) {
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1 transition-all active:scale-95"
+                className="px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>+ Add Line</span>
+                <span>Add Line</span>
               </button>
 
               <button

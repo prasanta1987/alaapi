@@ -512,7 +512,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {visibleSheets.map(sheet => {
-              const taalObj = TAALS[sheet.taal] || TAALS.kaharwa;
+              const taalObj = TAALS[sheet.taal] || TAALS.free;
               const scaleLabel = SCALE_OPTIONS.find(s => s.value === sheet.scaleOffset)?.label || 'Sa = B♭';
 
               return (
