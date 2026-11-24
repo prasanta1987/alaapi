@@ -395,7 +395,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const onlineUsersCount = allUsers.filter(u => isUserOnline(u)).length;
 
   return (
-    <div className="p-3 sm:p-6 max-w-6xl w-full mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
       {/* Toast Alert for Call Result */}
       {callNotice && (
         <div className="p-3.5 bg-yellow-950/80 border border-yellow-600 text-yellow-300 rounded-2xl text-xs sm:text-sm flex items-center justify-between shadow-lg">
@@ -415,179 +415,86 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         </div>
       )}
 
-      {/* User Welcome & Studio Hub Card */}
-      <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-        {/* Left: User Identity */}
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="relative shrink-0">
-            <UserAvatar
-              photoURL={currentUser.photoURL || userProfile?.photoURL}
-              name={userProfile?.displayName || currentUser.displayName}
-              size="xl"
-            />
-            <span
-              className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-gray-900 bg-emerald-400"
-              title="Online & Ready in Studio"
-            />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black text-white truncate">
-                {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
-              </h2>
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${isAdmin
-                ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
-                : isTeacher
-                  ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
-                  : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
-                }`}>
-                {role}
-              </span>
+      {/* Main Responsive Layout: Left Sidebar on PC (lg:), Top Card on Mobile (<lg) */}
+      <div className="flex flex-col lg:flex-row items-start gap-6">
+
+        {/* LEFT COLUMN: Sidebar on PC/Tablet, Top Card on Mobile */}
+        <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6">
+          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 shadow-xl flex flex-col gap-4">
+            {/* User Identity (Horizontal banner on mobile, Centered profile card on desktop) */}
+            <div className="flex flex-row lg:flex-col items-center lg:items-center gap-4 text-left lg:text-center">
+              <UserAvatar
+                photoURL={currentUser.photoURL || userProfile?.photoURL}
+                name={userProfile?.displayName || currentUser.displayName}
+                size="xl"
+              />
+              <div className="min-w-0 flex-1 lg:flex-initial">
+                <div className="flex items-center lg:justify-center gap-2 flex-wrap">
+                  <h2 className="text-lg sm:text-xl font-black text-white truncate">
+                    {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
+                  </h2>
+                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${isAdmin
+                    ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
+                    : isTeacher
+                      ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
+                      : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
+                    }`}>
+                    {role}
+                  </span>
+                </div>
+                <p className="text-gray-400 text-xs mt-1">
+                  {userProfile?.instrument || 'Indian Classical Vocals'}
+                </p>
+              </div>
             </div>
-            <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-2 flex-wrap">
-              <span>{userProfile?.instrument || 'Indian Classical Vocals'}</span>
-              {currentUser?.email && (
-                <>
-                  <span className="text-gray-600">•</span>
-                  <span className="text-gray-500 font-mono text-[11px] truncate">{currentUser.email}</span>
-                </>
-              )}
-            </p>
-          </div>
-        </div>
 
-        {/* Center: Live Studio Indicators & Metrics */}
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full lg:w-auto">
-          {isTeacher && !isAdmin && (
-            <>
-              {/* Online Students Badge */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-emerald-500/30 text-xs shadow-inner"
-                title={`${onlineStudentsCount} of ${studentsList.length} assigned students are currently online`}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="text-gray-400 text-[11px]">Online:</span>
-                <span className="font-bold text-emerald-300 font-mono text-xs">{onlineStudentsCount}</span>
-                <span className="text-gray-600 text-[11px]">/ {studentsList.length}</span>
+            {/* Quick Metrics / Overview */}
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 pt-2 border-t border-gray-800/80">
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] text-gray-400 leading-none">Swaralipi Sheets</p>
+                  <p className="font-bold text-white font-mono text-sm mt-0.5">{visibleSheets.length}</p>
+                </div>
               </div>
 
-              {/* Total Assigned Students */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
-                title="Total students assigned to you"
-              >
-                <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="text-gray-400 text-[11px]">Students:</span>
-                <span className="font-bold text-white font-mono text-xs">{studentsList.length}</span>
-              </div>
-
-              {/* Swaralipi Sheets Count */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
-                title="Total Swaralipi notation sheets created"
-              >
-                <BookOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="text-gray-400 text-[11px]">Swaralipi:</span>
-                <span className="font-bold text-white font-mono text-xs">{visibleSheets.length}</span>
-              </div>
-            </>
-          )}
-
-          {!isTeacher && !isAdmin && (
-            <>
-              {/* Student's Assigned Teacher Status */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
-                title={assignedTeacher ? `Your Teacher: ${assignedTeacher.displayName}` : 'No teacher assigned yet'}
-              >
-                <GraduationCap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="text-gray-400 text-[11px]">Teacher:</span>
-                {assignedTeacher ? (
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-white text-xs truncate max-w-[110px]">
-                      {assignedTeacher.displayName}
-                    </span>
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        isUserOnline(assignedTeacher) ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
-                      }`}
-                      title={isUserOnline(assignedTeacher) ? 'Teacher is Online' : 'Teacher is Offline'}
-                    />
+              {!isTeacher && !isAdmin && assignedTeacher && (
+                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                  <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-gray-400 leading-none">Your Guru</p>
+                    <p className="font-bold text-emerald-300 text-xs mt-0.5 truncate">{assignedTeacher.displayName}</p>
                   </div>
-                ) : (
-                  <span className="text-amber-400 text-[11px]">Not assigned</span>
-                )}
-              </div>
+                </div>
+              )}
+            </div>
 
-              {/* Student's Homework Sheets Count */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
-                title="Homework sheets available for practice"
+            {/* Quick Action Buttons (Row on mobile, Stacked on desktop) */}
+            <div className="flex flex-row lg:flex-col gap-2 pt-2 border-t border-gray-800/80">
+              <Link
+                to="/tuner"
+                className="flex-1 w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
+                title="Open Indian Classical Pitch Monitor & Swara Tuner"
               >
-                <BookOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="text-gray-400 text-[11px]">Homework:</span>
-                <span className="font-bold text-white font-mono text-xs">{visibleSheets.length}</span>
-              </div>
-            </>
-          )}
+                <Music className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>Swara Tuner</span>
+              </Link>
+              {isTeacher && (
+                <Link
+                  to="/swaralipi/new"
+                  className="flex-1 w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
+                  title="Create New Swaralipi Sheet"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span>New Swaralipi</span>
+                </Link>
+              )}
+            </div>
+          </div>
+        </aside>
 
-          {isAdmin && (
-            <>
-              {/* Admin Online Count */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-emerald-500/30 text-xs shadow-inner"
-                title={`${onlineUsersCount} total active users online`}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="text-gray-400 text-[11px]">Online Now:</span>
-                <span className="font-bold text-emerald-300 font-mono text-xs">{onlineUsersCount}</span>
-              </div>
-
-              {/* Total Users */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
-                title="Total registered users"
-              >
-                <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="text-gray-400 text-[11px]">Members:</span>
-                <span className="font-bold text-white font-mono text-xs">{allUsers.length}</span>
-              </div>
-
-              {/* Total Sheets */}
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
-                title="Total Swaralipi sheets across all studios"
-              >
-                <BookOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="text-gray-400 text-[11px]">Swaralipi:</span>
-                <span className="font-bold text-white font-mono text-xs">{swaralipiSheets.length}</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Right: Quick Studio Action Buttons */}
-        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-          <Link
-            to="/tuner"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-900/50 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
-            title="Open Indian Classical Pitch Monitor & Swara Tuner"
-          >
-            <Music className="w-3.5 h-3.5 text-purple-400" />
-            <span>Swara Tuner</span>
-          </Link>
-          {isTeacher && (
-            <Link
-              to="/swaralipi/new"
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
-              title="Create New Swaralipi Sheet"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>New Swaralipi</span>
-            </Link>
-          )}
-        </div>
-      </div>
+        {/* RIGHT COLUMN: Main Content Area */}
+        <div className="flex-1 w-full min-w-0 space-y-6 sm:space-y-8">
 
       {/* 1. ADMIN DIRECTORY: CAN CALL ANYONE (STUDENTS & TEACHERS) */}
       {isAdmin ? (
@@ -797,11 +704,22 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         <section className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-7 shadow-xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
             <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-emerald-400" />
-                My Assigned Students
-              </h3>
-              <p className="text-xs text-gray-400">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <GraduationCap className="w-5 h-5 text-emerald-400" />
+                  My Assigned Students
+                </h3>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                  {studentsList.length} {studentsList.length === 1 ? 'Student' : 'Students'}
+                </span>
+                {onlineStudentsCount > 0 && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    {onlineStudentsCount} Online
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
                 Direct 1-click calling to your assigned students.
               </p>
             </div>
@@ -1316,6 +1234,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         )}
       </section>
 
+        </div>
+      </div>
     </div>
   );
 }
