@@ -9,6 +9,7 @@ import { EditRolePage } from './pages/EditRolePage';
 import { OrgChartPage } from './pages/OrgChartPage';
 import { CallStudioPage } from './pages/CallStudioPage';
 import { PitchMonitorPage } from './pages/PitchMonitorPage';
+import { SwaralipiPage } from './pages/SwaralipiPage';
 import { IncomingCallModal } from './components/IncomingCallModal';
 import { OutgoingCallModal } from './components/OutgoingCallModal';
 import { ProfileModal } from './components/ProfileModal';
@@ -78,8 +79,9 @@ export function AppContent() {
 
   const isTunerPage = location.pathname === '/tuner';
   const isOrgChartPage = location.pathname === '/orgchart';
+  const isSwaralipiPage = location.pathname.startsWith('/swaralipi');
   const isFullCanvasPage = isTunerPage || isOrgChartPage;
-  const hideNavbar = isInCall || isTunerPage;
+  const hideNavbar = isInCall || isTunerPage || isSwaralipiPage;
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 overflow-hidden select-none">
@@ -125,6 +127,8 @@ export function AppContent() {
             <Route path="/editroll" element={<EditRolePage />} />
             <Route path="/editroles" element={<EditRolePage />} />
             <Route path="/orgchart" element={<OrgChartPage />} />
+            <Route path="/swaralipi/new" element={<SwaralipiPage mode="new" />} />
+            <Route path="/swaralipi/:id" element={<SwaralipiPage />} />
             <Route
               path="*"
               element={
