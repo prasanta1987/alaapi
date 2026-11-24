@@ -434,12 +434,12 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </div>
 
               {/* Name, Badge & Specialization */}
-              <div className="min-w-0 flex-1 lg:flex-initial">
-                <div className="flex items-center lg:justify-center gap-2 flex-wrap">
-                  <h2 className="text-base sm:text-lg lg:text-xl font-black text-white truncate">
-                    {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
-                  </h2>
-                  <span className={`inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${isAdmin
+              <div className="min-w-0 flex-1 lg:flex-initial flex flex-col items-start lg:items-center">
+                <h2 className="text-base sm:text-lg lg:text-xl font-black text-white truncate w-full">
+                  {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
+                </h2>
+                <div className="mt-1.5 flex items-center lg:justify-center">
+                  <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border shrink-0 ${isAdmin
                     ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
                     : isTeacher
                       ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
@@ -448,7 +448,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                     {role}
                   </span>
                 </div>
-                <p className="text-purple-300 text-xs font-semibold mt-0.5 lg:mt-1.5">
+                <p className="text-purple-300 text-xs font-semibold mt-1">
                   {userProfile?.instrument || 'Indian Classical Vocals'}
                 </p>
 
