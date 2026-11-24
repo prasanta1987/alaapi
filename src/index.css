@@ -182,27 +182,36 @@ body.layout-overlay .mobile-top-bar {
 
 body.layout-overlay #localVideoContainer {
   position: relative !important;
+  min-height: 0 !important;
   border-radius: 0.75rem !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8) !important;
   pointer-events: auto !important;
   overflow: hidden !important;
-  background-color: #030712 !important;
-  transition: width 0.2s ease, aspect-ratio 0.2s ease;
+  background-color: rgba(3, 7, 18, 0.45) !important;
+  backdrop-filter: blur(8px) !important;
+  opacity: 0.72 !important;
+  transition: width 0.25s ease, aspect-ratio 0.25s ease, opacity 0.2s ease, transform 0.2s ease !important;
+}
+
+body.layout-overlay #localVideoContainer:hover,
+body.layout-overlay #localVideoContainer:active,
+body.layout-overlay #localVideoContainer:focus-within {
+  opacity: 1 !important;
 }
 
 body.layout-overlay.orientation-portrait #localVideoContainer {
-  width: 6.5rem !important;
+  width: 5rem !important;
   aspect-ratio: 3 / 4;
 }
 
 body.layout-overlay.orientation-landscape #localVideoContainer {
-  width: 9rem !important;
+  width: 7rem !important;
   aspect-ratio: 4 / 3;
 }
 
 body.layout-overlay:not(.orientation-landscape) #localVideoContainer {
-  width: 6.5rem !important;
+  width: 5rem !important;
   aspect-ratio: 3 / 4;
 }
 

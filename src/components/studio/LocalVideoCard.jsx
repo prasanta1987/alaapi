@@ -66,9 +66,9 @@ export function LocalVideoCard({
           <button
             onClick={onToggleLocalMirror}
             title={isLocalMirrored ? "Switch to Normal (Unmirrored)" : "Switch to Mirrored"}
-            className="absolute top-1.5 left-1.5 z-20 bg-black/70 hover:bg-black/90 active:scale-95 text-gray-200 hover:text-white px-1.5 py-1 rounded-md backdrop-blur border border-white/20 transition-all flex items-center gap-1 shadow-md cursor-pointer"
+            className="absolute top-1 left-1 sm:top-1.5 sm:left-1.5 z-20 bg-black/60 hover:bg-black/90 active:scale-95 text-gray-200 hover:text-white px-1.5 py-0.5 sm:py-1 rounded-md backdrop-blur border border-white/20 transition-all flex items-center gap-1 shadow-md cursor-pointer"
           >
-            <FlipHorizontal className="w-3.5 h-3.5 text-purple-300" />
+            <FlipHorizontal className="w-3 h-3 text-purple-300" />
             <span className="text-[9px] font-semibold hidden sm:inline">
               {isLocalMirrored ? 'Mirrored' : 'Normal'}
             </span>
@@ -89,10 +89,10 @@ export function LocalVideoCard({
           </div>
         ) : null}
 
-        <div className="absolute bottom-1 right-1 sm:bottom-1.5 sm:right-1.5 bg-black/75 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded backdrop-blur border border-white/10 flex items-center gap-1">
+        <div className="absolute bottom-1 right-1 sm:bottom-1.5 sm:right-1.5 bg-black/60 text-white text-[9px] sm:text-xs px-1.5 py-0.5 rounded backdrop-blur border border-white/10 flex items-center gap-1">
           <span>You</span>
           {!hasLocalAudio && (
-            <span className="text-[9px] text-amber-400 font-medium">(No Mic)</span>
+            <span className="text-[8px] text-amber-400 font-medium">(No Mic)</span>
           )}
         </div>
       </div>
