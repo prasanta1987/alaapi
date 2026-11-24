@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "alaapi"
-  }
+  },
+  "targets": {
+    "alaapi": {
+      "hosting": {
+        "app": [
+          "alaapi"
+        ],
+        "test": [
+          "alaapi-test"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

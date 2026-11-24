@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && firebase deploy --only hosting",
+    "deploy:test": "npm run build && firebase deploy --only hosting:test",
+    "deploy:app": "npm run build && firebase deploy --only hosting:app",
     "deploy:all": "npm run build && firebase deploy --only \"hosting,firestore:rules\""
   },
   "dependencies": {
