@@ -346,6 +346,12 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
       (u.instrument || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.phone || '').includes(searchTerm)
     );
+  }).sort((a, b) => {
+    const aOnline = isUserOnline(a);
+    const bOnline = isUserOnline(b);
+    if (aOnline && !bOnline) return -1;
+    if (!aOnline && bOnline) return 1;
+    return (a.displayName || '').localeCompare(b.displayName || '');
   });
 
   // Filter teachers (teachers strictly, excluding admins from regular teacher list)
@@ -453,151 +459,6 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
           </button>
         </div>
       </div>
-
-      {/* SWARALIPI HOMEWORK & PRACTICE SECTION */}
-      <section className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-7 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0 text-lg shadow-inner">
-              🎵
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                Swaralipi Homework & Practice
-              </h3>
-              <p className="text-xs text-gray-400">
-                {isTeacher
-                  ? 'Create, assign, and manage Bengali Akarmatrik Swaralipi homework sheets for students.'
-                  : 'Practice your assigned Swaralipi exercises with the harmonium player and print clean sheets.'}
-              </p>
-            </div>
-          </div>
-
-          {isTeacher && (
-            <Link
-              to="/swaralipi/new"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-900/30 transition-all active:scale-95 shrink-0 self-start sm:self-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ New Swaralipi</span>
-            </Link>
-          )}
-        </div>
-
-        {loadingSheets ? (
-          <p className="text-center py-8 text-gray-500 text-xs">Loading homework sheets...</p>
-        ) : visibleSheets.length === 0 ? (
-          <div className="text-center py-8 bg-gray-950/40 rounded-2xl border border-gray-800/60 p-6">
-            <Music className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-            <p className="text-gray-300 text-sm font-medium">
-              {isTeacher
-                ? 'No Swaralipi homework sheets created yet.'
-                : 'No homework sheets currently assigned to your account.'}
-            </p>
-            <p className="text-gray-500 text-xs mt-1">
-              {isTeacher
-                ? 'Click "+ New Swaralipi" to compose Bengali Akarmatrik notations with harmonium audio and assign them to students.'
-                : 'When your instructor creates an exercise or song notation, it will appear here for practice.'}
-            </p>
-            {isTeacher && (
-              <Link
-                to="/swaralipi/new"
-                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600/80 hover:bg-purple-600 text-white text-xs font-bold transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create Your First Swaralipi</span>
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {visibleSheets.map(sheet => {
-              const taalObj = TAALS[sheet.taal] || TAALS.free;
-              const scaleLabel = SCALE_OPTIONS.find(s => s.value === sheet.scaleOffset)?.label || 'Sa = B♭';
-
-              return (
-                <div
-                  key={sheet.id}
-                  className="bg-gray-800/50 border border-gray-700/70 hover:border-purple-500/50 p-4 rounded-2xl flex flex-col justify-between transition-all shadow-md group"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <h4 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors font-bengali line-clamp-1">
-                        {sheet.title || 'স্বরলিপি'}
-                      </h4>
-                      {isTeacher && (
-                        <button
-                          onClick={() => handleDeleteSheet(sheet)}
-                          title="Delete Homework"
-                          className="p-1 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 flex-wrap mb-3">
-                      <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/70 border border-purple-800/50 px-2 py-0.5 rounded-md">
-                        {taalObj.name}
-                      </span>
-                      <span className="text-[10px] font-semibold text-blue-300 bg-blue-950/70 border border-blue-800/50 px-2 py-0.5 rounded-md font-mono">
-                        {scaleLabel}
-                      </span>
-                      <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-950/70 border border-emerald-800/50 px-2 py-0.5 rounded-md font-mono">
-                        {sheet.bpm || 90} BPM
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-gray-400 flex items-center justify-between gap-2 border-t border-gray-800/80 pt-2 mb-3">
-                      {isTeacher ? (
-                        <span className="truncate">
-                          🎯 {sheet.studentName ? `Assigned: ${sheet.studentName}` : 'For All Students'}
-                        </span>
-                      ) : (
-                        <span className="truncate">
-                          👨‍🏫 {sheet.teacherName || 'Instructor'}
-                        </span>
-                      )}
-                      <span className="text-gray-500 text-[10px] shrink-0">
-                        {sheet.updatedAt?.toDate ? sheet.updatedAt.toDate().toLocaleDateString() : 'Recent'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {isTeacher ? (
-                    <div className="grid grid-cols-2 gap-2 mt-auto">
-                      <Link
-                        to={`/swaralipi/${sheet.id}`}
-                        className="py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/30 transition-all active:scale-95"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                      </Link>
-                      <Link
-                        to={`/swaralipi/${sheet.id}`}
-                        className="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all active:scale-95"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Play / View</span>
-                      </Link>
-                    </div>
-                  ) : (
-                    <Link
-                      to={`/swaralipi/${sheet.id}`}
-                      className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-900/30 transition-all active:scale-95 mt-auto"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Open & Practice</span>
-                    </Link>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-
 
       {/* 1. ADMIN DIRECTORY: CAN CALL ANYONE (STUDENTS & TEACHERS) */}
       {isAdmin ? (
@@ -1180,6 +1041,151 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
           </div>
         </section>
       )}
+
+      {/* SWARALIPI HOMEWORK & PRACTICE SECTION */}
+      <section className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0 text-lg shadow-inner">
+              🎵
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                Swaralipi Homework & Practice
+              </h3>
+              <p className="text-xs text-gray-400">
+                {isTeacher
+                  ? 'Create, assign, and manage Bengali Akarmatrik Swaralipi homework sheets for students.'
+                  : 'Practice your assigned Swaralipi exercises with the harmonium player and print clean sheets.'}
+              </p>
+            </div>
+          </div>
+
+          {isTeacher && (
+            <Link
+              to="/swaralipi/new"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-900/30 transition-all active:scale-95 shrink-0 self-start sm:self-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Swaralipi</span>
+            </Link>
+          )}
+        </div>
+
+        {loadingSheets ? (
+          <p className="text-center py-6 text-gray-500 text-xs">Loading homework sheets...</p>
+        ) : visibleSheets.length === 0 ? (
+          <div className="text-center py-6 bg-gray-950/40 rounded-2xl border border-gray-800/60 p-5">
+            <Music className="w-7 h-7 text-gray-600 mx-auto mb-2" />
+            <p className="text-gray-300 text-xs sm:text-sm font-medium">
+              {isTeacher
+                ? 'No Swaralipi homework sheets created yet.'
+                : 'No homework sheets currently assigned to your account.'}
+            </p>
+            <p className="text-gray-500 text-xs mt-1 max-w-md mx-auto">
+              {isTeacher
+                ? 'Click "New Swaralipi" to compose Bengali Akarmatrik notations with harmonium audio and assign them to students.'
+                : 'When your instructor creates an exercise or song notation, it will appear here for practice.'}
+            </p>
+            {isTeacher && (
+              <Link
+                to="/swaralipi/new"
+                className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600/80 hover:bg-purple-600 text-white text-xs font-bold transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Your First Swaralipi</span>
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {visibleSheets.map(sheet => {
+              const taalObj = TAALS[sheet.taal] || TAALS.free;
+              const scaleLabel = SCALE_OPTIONS.find(s => s.value === sheet.scaleOffset)?.label || 'Sa = B♭';
+
+              return (
+                <div
+                  key={sheet.id}
+                  className="bg-gray-800/50 border border-gray-700/70 hover:border-purple-500/50 p-3.5 rounded-2xl flex flex-col justify-between transition-all shadow-md group"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-purple-300 transition-colors font-bengali line-clamp-1">
+                        {sheet.title || 'স্বরলিপি'}
+                      </h4>
+                      {isTeacher && (
+                        <button
+                          onClick={() => handleDeleteSheet(sheet)}
+                          title="Delete Homework"
+                          className="p-1 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-500/30 transition-all shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+                      <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/70 border border-purple-800/50 px-2 py-0.5 rounded-md">
+                        {taalObj.name}
+                      </span>
+                      <span className="text-[10px] font-semibold text-blue-300 bg-blue-950/70 border border-blue-800/50 px-2 py-0.5 rounded-md font-mono">
+                        {scaleLabel}
+                      </span>
+                      <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-950/70 border border-emerald-800/50 px-2 py-0.5 rounded-md font-mono">
+                        {sheet.bpm || 90} BPM
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-gray-400 flex items-center justify-between gap-2 border-t border-gray-800/80 pt-2 mb-3">
+                      {isTeacher ? (
+                        <span className="truncate">
+                          🎯 {sheet.studentName ? `Assigned: ${sheet.studentName}` : 'For All Students'}
+                        </span>
+                      ) : (
+                        <span className="truncate">
+                          👨‍🏫 {sheet.teacherName || 'Instructor'}
+                        </span>
+                      )}
+                      <span className="text-gray-500 text-[10px] shrink-0">
+                        {sheet.updatedAt?.toDate ? sheet.updatedAt.toDate().toLocaleDateString() : 'Recent'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {isTeacher ? (
+                    <div className="grid grid-cols-2 gap-2 mt-auto">
+                      <Link
+                        to={`/swaralipi/${sheet.id}`}
+                        className="py-1.5 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/30 transition-all active:scale-95"
+                        title="Open in Composer Mode (with Keyboard)"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </Link>
+                      <Link
+                        to={`/swaralipi/${sheet.id}?view=practice`}
+                        className="py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all active:scale-95"
+                        title="Open in Clean Practice Mode (No Typing Dock)"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Play / View</span>
+                      </Link>
+                    </div>
+                  ) : (
+                    <Link
+                      to={`/swaralipi/${sheet.id}?view=practice`}
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-900/30 transition-all active:scale-95 mt-auto"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Open & Practice</span>
+                    </Link>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
     </div>
   );

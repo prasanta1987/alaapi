@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   db,
@@ -61,7 +61,11 @@ function createEmptyRow(beats) {
 export function SwaralipiPage({ mode }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, userProfile, isAdmin } = useAuth();
+
+  const searchParams = new URLSearchParams(location.search);
+  const isPracticeRequested = searchParams.get('view') === 'practice' || searchParams.get('mode') === 'practice';
 
   const isTeacher = userProfile?.role === 'teacher' || isAdmin;
 
@@ -78,7 +82,7 @@ export function SwaralipiPage({ mode }) {
   const [cursor, setCursor] = useState({ r: 0, c: 0 });
   const [currentOctave, setCurrentOctave] = useState(0); // -1, 0, 1
   const [keypadMode, setKeypadMode] = useState('kbd'); // 'kbd' | 'pad'
-  const [showKeypad, setShowKeypad] = useState(true);
+  const [showKeypad, setShowKeypad] = useState(() => !isPracticeRequested);
   const [pressedMidi, setPressedMidi] = useState(null);
   const [playingCell, setPlayingCell] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -94,7 +98,7 @@ export function SwaralipiPage({ mode }) {
   const [statusNotice, setStatusNotice] = useState(null);
 
   // Student vs Teacher view toggle (Teacher can preview student mode)
-  const [previewStudentView, setPreviewStudentView] = useState(false);
+  const [previewStudentView, setPreviewStudentView] = useState(() => Boolean(isPracticeRequested));
 
   // Determine if current user can edit
   const isAuthor = !teacherId || teacherId === currentUser?.uid || isAdmin;
