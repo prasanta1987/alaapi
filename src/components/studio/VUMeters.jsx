@@ -7,7 +7,7 @@ import { Mic, MicOff, Wifi } from 'lucide-react';
 export function MicVUMeter({ micLevel, isMuted, hasLocalAudio }) {
   return (
     <div
-      className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow"
+      className="bg-gray-900/90 backdrop-blur px-2 py-1 rounded-full border border-purple-500/40 flex items-center gap-1.5 shadow-md"
       title={isMuted ? "Microphone is Muted" : !hasLocalAudio ? "No Microphone Detected" : `Mic Pickup: ${micLevel}%`}
     >
       {isMuted || !hasLocalAudio ? (
@@ -97,7 +97,7 @@ export function NetworkVUMeter({ pingRtt, remoteConnected, isReconnecting }) {
 
   return (
     <div
-      className="bg-gray-900/85 backdrop-blur px-2 py-1 rounded-full border border-purple-500/30 flex items-center gap-1.5 shadow"
+      className="bg-gray-900/90 backdrop-blur px-2 py-1 rounded-full border border-purple-500/40 flex items-center gap-1.5 shadow-md"
       title={
         !remoteConnected
           ? "Waiting for participant to connect"

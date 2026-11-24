@@ -22,13 +22,16 @@ export function MobileTopBar({
 }) {
   return (
     <div
-      className={`mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none transition-opacity duration-300 ${
-        isControlsDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'
-      }`}
+      className="mobile-top-bar absolute top-3 pt-[env(safe-area-inset-top,0px)] inset-x-3 z-20 flex items-center justify-between pointer-events-none"
     >
-      <div className="flex items-center gap-1.5 pointer-events-auto">
+      {/* Vital In-Call HUD: Timer, Mic VU Meter & Network Health - Always clearly visible */}
+      <div
+        className={`flex items-center gap-1.5 pointer-events-auto transition-opacity duration-300 ${
+          isControlsDimmed ? 'opacity-85 hover:opacity-100' : 'opacity-100'
+        }`}
+      >
         {/* Call Running Timer on Mobile / Video Feed */}
-        <div className="bg-gray-900/85 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/30 shadow">
+        <div className="bg-gray-900/90 backdrop-blur px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold text-purple-300 flex items-center gap-1.5 border border-purple-500/40 shadow-md">
           <Clock className="w-3 h-3 text-purple-400" />
           <span>{formatDuration(callDuration)}</span>
         </div>
@@ -46,9 +49,13 @@ export function MobileTopBar({
         />
       </div>
 
-      {/* Room ID Badge: Only shown before call is connected so user can copy & share it */}
+      {/* Room ID Badge: Only shown before call is connected, auto-dims when idle */}
       {!remoteConnected && (
-        <div className="bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto">
+        <div
+          className={`bg-gray-900/90 backdrop-blur border border-purple-500/40 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 pointer-events-auto transition-opacity duration-300 ${
+            isControlsDimmed ? 'opacity-30 hover:opacity-100' : 'opacity-100'
+          }`}
+        >
           <span className="text-[10px] font-semibold text-gray-400 uppercase">Room</span>
           <span className="text-sm font-mono font-bold text-purple-400 tracking-wider select-all">{roomId}</span>
           <button
