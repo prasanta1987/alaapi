@@ -468,9 +468,10 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </p>
             )}
 
-            {/* Middle: Studio Overview Metrics (Desktop only to keep mobile ultra-compact) */}
-            <div className="hidden lg:block my-auto py-3 space-y-2 border-y border-gray-800/80 w-full">
-              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+            {/* Bottom: Library Overview Metric & Action Buttons (Anchored at the bottom) */}
+            <div className="mt-auto flex flex-col gap-2.5 w-full pt-4 border-t border-gray-800/80">
+              {/* Swaralipi Sheets Metric (Desktop view) */}
+              <div className="hidden lg:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                 <div className="flex items-center gap-2 text-gray-300">
                   <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
                   <span className="text-xs">Swaralipi Sheets</span>
@@ -479,7 +480,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </div>
 
               {!isTeacher && !isAdmin && assignedTeacher && (
-                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                <div className="hidden lg:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                   <div className="flex items-center gap-2 text-gray-300">
                     <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span className="text-xs">Guru</span>
@@ -487,28 +488,28 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                   <span className="font-bold text-emerald-300 text-xs truncate max-w-[120px]">{assignedTeacher.displayName}</span>
                 </div>
               )}
-            </div>
 
-            {/* Action Buttons: Row on Mobile (side by side), Stacked Column on Desktop */}
-            <div className="flex flex-row lg:flex-col gap-2 w-full pt-1 sm:pt-0">
-              <Link
-                to="/tuner"
-                className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
-                title="Open Indian Classical Pitch Monitor & Swara Tuner"
-              >
-                <Music className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span>Swara Tuner</span>
-              </Link>
-              {isTeacher && (
+              {/* Action Buttons: Row on Mobile (side by side), Stacked Column on Desktop */}
+              <div className="flex flex-row lg:flex-col gap-2 w-full">
                 <Link
-                  to="/swaralipi/new"
-                  className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
-                  title="Create New Swaralipi Sheet"
+                  to="/tuner"
+                  className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
+                  title="Open Indian Classical Pitch Monitor & Swara Tuner"
                 >
-                  <Plus className="w-3.5 h-3.5 shrink-0" />
-                  <span>New Swaralipi</span>
+                  <Music className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>Swara Tuner</span>
                 </Link>
-              )}
+                {isTeacher && (
+                  <Link
+                    to="/swaralipi/new"
+                    className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
+                    title="Create New Swaralipi Sheet"
+                  >
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span>New Swaralipi</span>
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
         </aside>
