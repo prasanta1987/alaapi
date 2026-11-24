@@ -954,8 +954,14 @@ export function SwaralipiPage({ mode }) {
       </main>
 
       {/* Sticky Bottom Dock: Harmonium Keyboard <-> Bengali Swara Pad (Teacher Composer Mode Only) */}
-      {canEdit && showKeypad && (
-        <div className="fixed bottom-0 left-0 right-0 bg-gray-900/98 border-t border-gray-700/80 backdrop-blur-md px-2.5 pt-2 pb-[calc(10px+env(safe-area-inset-bottom,0px))] z-40 shadow-2xl no-print">
+      {canEdit && (
+        <div
+          className={`fixed bottom-0 left-0 right-0 bg-gray-900/98 border-t border-gray-700/80 backdrop-blur-md px-2.5 pt-2 pb-[calc(10px+env(safe-area-inset-bottom,0px))] z-40 shadow-2xl no-print transition-all duration-300 ease-in-out transform ${
+            showKeypad
+              ? 'translate-y-0 opacity-100 pointer-events-auto'
+              : 'translate-y-full opacity-0 pointer-events-none'
+          }`}
+        >
           <div className="max-w-4xl mx-auto flex flex-col gap-2">
             {/* Dock Header Toolbar */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1264,16 +1270,22 @@ export function SwaralipiPage({ mode }) {
       )}
 
       {/* Floating Button to Re-Open Typing Panel when Hidden */}
-      {canEdit && !showKeypad && (
-        <div className="fixed bottom-4 right-4 z-40 no-print">
+      {canEdit && (
+        <div
+          className={`fixed bottom-4 right-4 z-40 no-print transition-all duration-300 ease-in-out transform ${
+            !showKeypad
+              ? 'translate-y-0 opacity-100 pointer-events-auto scale-100'
+              : 'translate-y-12 opacity-0 pointer-events-none scale-90'
+          }`}
+        >
           <button
             type="button"
             onClick={() => setShowKeypad(true)}
-            className="px-4 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-2xl shadow-purple-900/60 border border-purple-400/50 active:scale-95 transition-all"
+            className="px-4 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-2xl shadow-purple-900/70 border border-purple-400/50 active:scale-95 transition-all"
             title="Open Typing Panel (Harmonium Keyboard & Swara Pad)"
           >
             <Keyboard className="w-4 h-4 text-purple-200" />
-            <span>Show Typing Panel</span>
+            <span>Show Keyboard</span>
             <ChevronUp className="w-4 h-4 text-purple-200" />
           </button>
         </div>
