@@ -418,62 +418,81 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
       {/* Main Responsive Layout: Left Sidebar on PC (lg:), Top Card on Mobile (<lg) */}
       <div className="flex flex-col lg:flex-row items-start gap-6">
 
-        {/* LEFT COLUMN: Sidebar on PC/Tablet, Top Card on Mobile */}
-        <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6">
-          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 shadow-xl flex flex-col gap-4">
-            {/* User Identity (Horizontal banner on mobile, Centered profile card on desktop) */}
-            <div className="flex flex-row lg:flex-col items-center lg:items-center gap-4 text-left lg:text-center">
-              <UserAvatar
-                photoURL={currentUser.photoURL || userProfile?.photoURL}
-                name={userProfile?.displayName || currentUser.displayName}
-                size="xl"
-              />
-              <div className="min-w-0 flex-1 lg:flex-initial">
-                <div className="flex items-center lg:justify-center gap-2 flex-wrap">
-                  <h2 className="text-lg sm:text-xl font-black text-white truncate">
-                    {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
-                  </h2>
-                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${isAdmin
-                    ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
-                    : isTeacher
-                      ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
-                      : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
-                    }`}>
-                    {role}
-                  </span>
-                </div>
-                <p className="text-gray-400 text-xs mt-1">
-                  {userProfile?.instrument || 'Indian Classical Vocals'}
-                </p>
+        {/* LEFT COLUMN: Sidebar on PC/Tablet (fills height with equal top/bottom gaps), Top Card on Mobile */}
+        <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6 lg:h-[calc(100dvh-6.5rem)] flex flex-col">
+          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-6 shadow-xl flex-1 flex flex-col justify-between overflow-y-auto gap-4">
+            {/* Top: Avatar, Name, Badge, Specialization & Bio */}
+            <div className="flex flex-col items-center text-center">
+              {/* Prominent Centered Avatar */}
+              <div className="relative mb-3 flex items-center justify-center">
+                <UserAvatar
+                  photoURL={currentUser.photoURL || userProfile?.photoURL}
+                  name={userProfile?.displayName || currentUser.displayName}
+                  size="xl"
+                  className="w-16 h-16 sm:w-20 sm:h-20 text-2xl shadow-xl ring-2 ring-purple-500/20"
+                />
               </div>
+
+              {/* Display Name */}
+              <h2 className="text-lg sm:text-xl font-black text-white leading-tight">
+                {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
+              </h2>
+
+              {/* Teacher / Role Badge */}
+              <div className="mt-2 flex items-center justify-center">
+                <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full border ${isAdmin
+                  ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
+                  : isTeacher
+                    ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
+                    : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
+                  }`}>
+                  {role}
+                </span>
+              </div>
+
+              {/* Musical Specialization */}
+              <p className="text-purple-300 text-xs font-semibold mt-1.5">
+                {userProfile?.instrument || 'Indian Classical Vocals'}
+              </p>
+
+              {/* Biography Section */}
+              {userProfile?.bio ? (
+                <p className="text-gray-400 text-xs mt-3 px-3 py-2 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center w-full">
+                  "{userProfile.bio}"
+                </p>
+              ) : (
+                <p className="text-gray-500 text-[11px] mt-2 italic">
+                  Alaapi Vocal Studio Faculty
+                </p>
+              )}
             </div>
 
-            {/* Quick Metrics / Overview */}
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 pt-2 border-t border-gray-800/80">
-              <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
-                <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] text-gray-400 leading-none">Swaralipi Sheets</p>
-                  <p className="font-bold text-white font-mono text-sm mt-0.5">{visibleSheets.length}</p>
+            {/* Middle: Studio Overview Metrics */}
+            <div className="my-auto py-3 space-y-2 border-y border-gray-800/80 w-full">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                <div className="flex items-center gap-2 text-gray-300">
+                  <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
+                  <span className="text-xs">Swaralipi Sheets</span>
                 </div>
+                <span className="font-bold text-white font-mono text-sm">{visibleSheets.length}</span>
               </div>
 
               {!isTeacher && !isAdmin && assignedTeacher && (
-                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
-                  <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-400 leading-none">Your Guru</p>
-                    <p className="font-bold text-emerald-300 text-xs mt-0.5 truncate">{assignedTeacher.displayName}</p>
+                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="text-xs">Guru</span>
                   </div>
+                  <span className="font-bold text-emerald-300 text-xs truncate max-w-[120px]">{assignedTeacher.displayName}</span>
                 </div>
               )}
             </div>
 
-            {/* Quick Action Buttons (Row on mobile, Stacked on desktop) */}
-            <div className="flex flex-row lg:flex-col gap-2 pt-2 border-t border-gray-800/80">
+            {/* Bottom: Quick Action Buttons */}
+            <div className="space-y-2 w-full pt-1">
               <Link
                 to="/tuner"
-                className="flex-1 w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
+                className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
                 title="Open Indian Classical Pitch Monitor & Swara Tuner"
               >
                 <Music className="w-4 h-4 text-purple-400 shrink-0" />
@@ -482,7 +501,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               {isTeacher && (
                 <Link
                   to="/swaralipi/new"
-                  className="flex-1 w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
+                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
                   title="Create New Swaralipi Sheet"
                 >
                   <Plus className="w-4 h-4 shrink-0" />
