@@ -455,14 +455,10 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                 {userProfile?.instrument || 'Indian Classical Vocals'}
               </p>
 
-              {/* Biography Section */}
-              {userProfile?.bio ? (
+              {/* Biography Section (Only shown if saved in database) */}
+              {userProfile?.bio?.trim() && (
                 <p className="text-gray-400 text-xs mt-3 px-3 py-2 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center w-full">
-                  "{userProfile.bio}"
-                </p>
-              ) : (
-                <p className="text-gray-500 text-[11px] mt-2 italic">
-                  Alaapi Vocal Studio Faculty
+                  "{userProfile.bio.trim()}"
                 </p>
               )}
             </div>
