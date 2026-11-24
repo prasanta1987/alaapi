@@ -418,53 +418,58 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
       {/* Main Responsive Layout: Left Sidebar on PC (lg:), Top Card on Mobile (<lg) */}
       <div className="flex flex-col lg:flex-row items-start gap-6">
 
-        {/* LEFT COLUMN: Sidebar on PC/Tablet (fills height with equal top/bottom gaps), Top Card on Mobile */}
+        {/* LEFT COLUMN: Sidebar on PC/Tablet (full height), Compact Card on Mobile */}
         <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6 lg:h-[calc(100dvh-6.5rem)] flex flex-col">
-          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-6 shadow-xl flex-1 flex flex-col justify-between overflow-y-auto gap-4">
-            {/* Top: Avatar, Name, Badge, Specialization & Bio */}
-            <div className="flex flex-col items-center text-center">
-              {/* Prominent Centered Avatar */}
-              <div className="relative mb-3 flex items-center justify-center">
+          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-5 lg:p-6 shadow-xl flex flex-col justify-between lg:h-full overflow-y-auto gap-3 sm:gap-4">
+            {/* User Identity: Compact horizontal row on mobile, Centered vertical column on desktop */}
+            <div className="flex flex-row lg:flex-col items-center lg:items-center gap-3.5 sm:gap-4 lg:gap-0 text-left lg:text-center">
+              {/* Avatar: Compact on mobile, Prominent on desktop */}
+              <div className="relative shrink-0 lg:mb-3">
                 <UserAvatar
                   photoURL={currentUser.photoURL || userProfile?.photoURL}
                   name={userProfile?.displayName || currentUser.displayName}
                   size="xl"
-                  className="w-16 h-16 sm:w-20 sm:h-20 text-2xl shadow-xl ring-2 ring-purple-500/20"
+                  className="w-12 h-12 sm:w-14 sm:h-14 lg:w-20 lg:h-20 text-lg lg:text-2xl shadow-xl ring-2 ring-purple-500/20"
                 />
               </div>
 
-              {/* Display Name */}
-              <h2 className="text-lg sm:text-xl font-black text-white leading-tight">
-                {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
-              </h2>
-
-              {/* Teacher / Role Badge */}
-              <div className="mt-2 flex items-center justify-center">
-                <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full border ${isAdmin
-                  ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
-                  : isTeacher
-                    ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
-                    : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
-                  }`}>
-                  {role}
-                </span>
-              </div>
-
-              {/* Musical Specialization */}
-              <p className="text-purple-300 text-xs font-semibold mt-1.5">
-                {userProfile?.instrument || 'Indian Classical Vocals'}
-              </p>
-
-              {/* Biography Section (Only shown if saved in database) */}
-              {userProfile?.bio?.trim() && (
-                <p className="text-gray-400 text-xs mt-3 px-3 py-2 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center w-full">
-                  "{userProfile.bio.trim()}"
+              {/* Name, Badge & Specialization */}
+              <div className="min-w-0 flex-1 lg:flex-initial">
+                <div className="flex items-center lg:justify-center gap-2 flex-wrap">
+                  <h2 className="text-base sm:text-lg lg:text-xl font-black text-white truncate">
+                    {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
+                  </h2>
+                  <span className={`inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${isAdmin
+                    ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
+                    : isTeacher
+                      ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
+                      : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
+                    }`}>
+                    {role}
+                  </span>
+                </div>
+                <p className="text-purple-300 text-xs font-semibold mt-0.5 lg:mt-1.5">
+                  {userProfile?.instrument || 'Indian Classical Vocals'}
                 </p>
-              )}
+
+                {/* Desktop Bio */}
+                {userProfile?.bio?.trim() && (
+                  <p className="hidden lg:block text-gray-400 text-xs mt-3 px-3 py-2 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center w-full">
+                    "{userProfile.bio.trim()}"
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* Middle: Studio Overview Metrics */}
-            <div className="my-auto py-3 space-y-2 border-y border-gray-800/80 w-full">
+            {/* Mobile Bio (only rendered if present) */}
+            {userProfile?.bio?.trim() && (
+              <p className="lg:hidden text-gray-400 text-xs px-3 py-1.5 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center">
+                "{userProfile.bio.trim()}"
+              </p>
+            )}
+
+            {/* Middle: Studio Overview Metrics (Desktop only to keep mobile ultra-compact) */}
+            <div className="hidden lg:block my-auto py-3 space-y-2 border-y border-gray-800/80 w-full">
               <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                 <div className="flex items-center gap-2 text-gray-300">
                   <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
@@ -484,23 +489,23 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               )}
             </div>
 
-            {/* Bottom: Quick Action Buttons */}
-            <div className="space-y-2 w-full pt-1">
+            {/* Action Buttons: Row on Mobile (side by side), Stacked Column on Desktop */}
+            <div className="flex flex-row lg:flex-col gap-2 w-full pt-1 sm:pt-0">
               <Link
                 to="/tuner"
-                className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
+                className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
                 title="Open Indian Classical Pitch Monitor & Swara Tuner"
               >
-                <Music className="w-4 h-4 text-purple-400 shrink-0" />
+                <Music className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                 <span>Swara Tuner</span>
               </Link>
               {isTeacher && (
                 <Link
                   to="/swaralipi/new"
-                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
+                  className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
                   title="Create New Swaralipi Sheet"
                 >
-                  <Plus className="w-4 h-4 shrink-0" />
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
                   <span>New Swaralipi</span>
                 </Link>
               )}
