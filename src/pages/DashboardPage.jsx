@@ -391,6 +391,9 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
     return false;
   });
 
+  const onlineStudentsCount = studentsList.filter(s => isUserOnline(s)).length;
+  const onlineUsersCount = allUsers.filter(u => isUserOnline(u)).length;
+
   return (
     <div className="p-3 sm:p-6 max-w-6xl w-full mx-auto space-y-6">
       {/* Toast Alert for Call Result */}
@@ -412,17 +415,24 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         </div>
       )}
 
-      {/* User Welcome Card */}
-      <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-7 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <UserAvatar
-            photoURL={currentUser.photoURL || userProfile?.photoURL}
-            name={userProfile?.displayName || currentUser.displayName}
-            size="xl"
-          />
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl sm:text-2xl font-black text-white">
+      {/* User Welcome & Studio Hub Card */}
+      <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+        {/* Left: User Identity */}
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="relative shrink-0">
+            <UserAvatar
+              photoURL={currentUser.photoURL || userProfile?.photoURL}
+              name={userProfile?.displayName || currentUser.displayName}
+              size="xl"
+            />
+            <span
+              className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-gray-900 bg-emerald-400"
+              title="Online & Ready in Studio"
+            />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl sm:text-2xl font-black text-white truncate">
                 {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
               </h2>
               <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${isAdmin
@@ -434,29 +444,148 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                 {role}
               </span>
             </div>
-            <p className="text-gray-400 text-xs mt-0.5">
-              {/* {currentUser.email}  •  {userProfile?.instrument || 'Vocalist'} */}
-              {userProfile?.instrument || 'Vocalist'}
+            <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>{userProfile?.instrument || 'Indian Classical Vocals'}</span>
+              {currentUser?.email && (
+                <>
+                  <span className="text-gray-600">•</span>
+                  <span className="text-gray-500 font-mono text-[11px] truncate">{currentUser.email}</span>
+                </>
+              )}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Center: Live Studio Indicators & Metrics */}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full lg:w-auto">
+          {isTeacher && !isAdmin && (
+            <>
+              {/* Online Students Badge */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-emerald-500/30 text-xs shadow-inner"
+                title={`${onlineStudentsCount} of ${studentsList.length} assigned students are currently online`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-gray-400 text-[11px]">Online:</span>
+                <span className="font-bold text-emerald-300 font-mono text-xs">{onlineStudentsCount}</span>
+                <span className="text-gray-600 text-[11px]">/ {studentsList.length}</span>
+              </div>
+
+              {/* Total Assigned Students */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
+                title="Total students assigned to you"
+              >
+                <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-gray-400 text-[11px]">Students:</span>
+                <span className="font-bold text-white font-mono text-xs">{studentsList.length}</span>
+              </div>
+
+              {/* Swaralipi Sheets Count */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
+                title="Total Swaralipi notation sheets created"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-gray-400 text-[11px]">Swaralipi:</span>
+                <span className="font-bold text-white font-mono text-xs">{visibleSheets.length}</span>
+              </div>
+            </>
+          )}
+
+          {!isTeacher && !isAdmin && (
+            <>
+              {/* Student's Assigned Teacher Status */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
+                title={assignedTeacher ? `Your Teacher: ${assignedTeacher.displayName}` : 'No teacher assigned yet'}
+              >
+                <GraduationCap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="text-gray-400 text-[11px]">Teacher:</span>
+                {assignedTeacher ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-white text-xs truncate max-w-[110px]">
+                      {assignedTeacher.displayName}
+                    </span>
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isUserOnline(assignedTeacher) ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+                      }`}
+                      title={isUserOnline(assignedTeacher) ? 'Teacher is Online' : 'Teacher is Offline'}
+                    />
+                  </div>
+                ) : (
+                  <span className="text-amber-400 text-[11px]">Not assigned</span>
+                )}
+              </div>
+
+              {/* Student's Homework Sheets Count */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
+                title="Homework sheets available for practice"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-gray-400 text-[11px]">Homework:</span>
+                <span className="font-bold text-white font-mono text-xs">{visibleSheets.length}</span>
+              </div>
+            </>
+          )}
+
+          {isAdmin && (
+            <>
+              {/* Admin Online Count */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-emerald-500/30 text-xs shadow-inner"
+                title={`${onlineUsersCount} total active users online`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-gray-400 text-[11px]">Online Now:</span>
+                <span className="font-bold text-emerald-300 font-mono text-xs">{onlineUsersCount}</span>
+              </div>
+
+              {/* Total Users */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
+                title="Total registered users"
+              >
+                <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-gray-400 text-[11px]">Members:</span>
+                <span className="font-bold text-white font-mono text-xs">{allUsers.length}</span>
+              </div>
+
+              {/* Total Sheets */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-950/80 border border-gray-800 text-xs shadow-inner"
+                title="Total Swaralipi sheets across all studios"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-gray-400 text-[11px]">Swaralipi:</span>
+                <span className="font-bold text-white font-mono text-xs">{swaralipiSheets.length}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Right: Quick Studio Action Buttons */}
+        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
           <Link
             to="/tuner"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-900/50 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-900/50 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
             title="Open Indian Classical Pitch Monitor & Swara Tuner"
           >
             <Music className="w-3.5 h-3.5 text-purple-400" />
-            Swara Tuner
+            <span>Swara Tuner</span>
           </Link>
-          <button
-            onClick={onOpenProfile}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700 transition-colors shadow-sm"
-          >
-            <Edit className="w-3.5 h-3.5 text-purple-400" />
-            Edit Profile Info
-          </button>
+          {isTeacher && (
+            <Link
+              to="/swaralipi/new"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/40 active:scale-95"
+              title="Create New Swaralipi Sheet"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Swaralipi</span>
+            </Link>
+          )}
         </div>
       </div>
 
