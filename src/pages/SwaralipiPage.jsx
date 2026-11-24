@@ -42,7 +42,10 @@ import {
   Eye,
   Edit3,
   Users,
-  GraduationCap
+  GraduationCap,
+  Keyboard,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 function createEmptyRow(beats) {
@@ -75,6 +78,7 @@ export function SwaralipiPage({ mode }) {
   const [cursor, setCursor] = useState({ r: 0, c: 0 });
   const [currentOctave, setCurrentOctave] = useState(0); // -1, 0, 1
   const [keypadMode, setKeypadMode] = useState('kbd'); // 'kbd' | 'pad'
+  const [showKeypad, setShowKeypad] = useState(true);
   const [pressedMidi, setPressedMidi] = useState(null);
   const [playingCell, setPlayingCell] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -744,41 +748,41 @@ export function SwaralipiPage({ mode }) {
       {/* Main Sheet Container */}
       <main
         ref={sheetContainerRef}
-        className={`flex-1 w-full max-w-4xl mx-auto p-3 sm:p-6 ${
-          canEdit ? 'pb-72 sm:pb-80' : 'pb-16'
+        className={`flex-1 w-full max-w-4xl mx-auto p-3 sm:p-6 transition-all duration-200 ${
+          canEdit && showKeypad ? 'pb-72 sm:pb-80' : 'pb-16'
         }`}
       >
-        {/* Homework Metadata Bar */}
-        <div className="bg-gray-900/80 border border-gray-800/90 rounded-2xl p-3 sm:p-4 mb-4 flex flex-wrap items-center justify-between gap-3 shadow-lg no-print">
-          <div className="flex-1 min-w-[220px]">
+        {/* Homework Metadata Bar: Single Line Row */}
+        <div className="bg-gray-900/80 border border-gray-800/90 rounded-2xl p-2 sm:p-3 mb-4 flex items-center justify-between gap-2 shadow-lg no-print flex-nowrap">
+          <div className="flex-1 min-w-0">
             {canEdit ? (
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Song / Alankar Title..."
-                className="w-full bg-gray-950 border border-gray-800 focus:border-purple-500 rounded-xl px-3 py-2 text-sm sm:text-base font-bold text-white outline-none"
+                className="w-full bg-gray-950 border border-gray-800 focus:border-purple-500 rounded-xl px-3 py-1.5 text-xs sm:text-sm font-bold text-white outline-none font-bengali"
               />
             ) : (
               <div>
-                <h2 className="text-lg sm:text-xl font-black text-white">{title}</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <h2 className="text-sm sm:text-base font-black text-white font-bengali truncate">{title || 'স্বরলিপি'}</h2>
+                <p className="text-[11px] text-gray-400 truncate">
                   তাল: {currentTaalObj.name}  •  স্কেল: {SCALE_OPTIONS.find(s => s.value === scaleOffset)?.label}  •  লয়: {bpm} BPM
                 </p>
               </div>
             )}
           </div>
 
-          {/* Teacher Student Assignment Controls */}
+          {/* Teacher Student Assignment Controls & Toggle Panel Button */}
           {canEdit && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 bg-gray-950 px-2.5 py-1.5 rounded-xl border border-gray-800 text-xs">
-                <GraduationCap className="w-3.5 h-3.5 text-purple-400" />
-                <span className="text-gray-400 font-medium">Assign:</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex items-center gap-1 bg-gray-950 px-2 py-1.5 rounded-xl border border-gray-800 text-xs shrink-0">
+                <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-gray-400 font-medium hidden md:inline text-[11px]">Assign:</span>
                 <select
                   value={studentId}
                   onChange={(e) => setStudentId(e.target.value)}
-                  className="bg-transparent text-gray-200 text-xs font-semibold outline-none cursor-pointer"
+                  className="bg-transparent text-gray-200 text-xs font-semibold outline-none cursor-pointer max-w-[100px] sm:max-w-[150px] truncate"
                 >
                   <option value="" className="bg-gray-900">All My Students</option>
                   {assignedStudents.map(st => (
@@ -792,16 +796,32 @@ export function SwaralipiPage({ mode }) {
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shrink-0"
+                title="Add New Row"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Line</span>
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xs:inline">Add Line</span>
+              </button>
+
+              {/* Show / Hide Typing Panel Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setShowKeypad(prev => !prev)}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shrink-0 ${
+                  showKeypad
+                    ? 'bg-purple-950/60 border-purple-500/60 text-purple-300'
+                    : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+                }`}
+                title={showKeypad ? 'Hide Typing Panel' : 'Show Typing Panel'}
+              >
+                <Keyboard className="w-3.5 h-3.5 shrink-0 text-purple-400" />
+                <span className="hidden sm:inline">{showKeypad ? 'Hide Panel' : 'Show Panel'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleClearSheet}
-                className="p-2 rounded-xl bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-500/30 text-xs transition-all active:scale-95"
+                className="p-1.5 sm:p-2 rounded-xl bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-500/30 text-xs transition-all active:scale-95 shrink-0"
                 title="Clear All Notes"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -930,7 +950,7 @@ export function SwaralipiPage({ mode }) {
       </main>
 
       {/* Sticky Bottom Dock: Harmonium Keyboard <-> Bengali Swara Pad (Teacher Composer Mode Only) */}
-      {canEdit && (
+      {canEdit && showKeypad && (
         <div className="fixed bottom-0 left-0 right-0 bg-gray-900/98 border-t border-gray-700/80 backdrop-blur-md px-2.5 pt-2 pb-[calc(10px+env(safe-area-inset-bottom,0px))] z-40 shadow-2xl no-print">
           <div className="max-w-4xl mx-auto flex flex-col gap-2">
             {/* Dock Header Toolbar */}
@@ -1029,6 +1049,17 @@ export function SwaralipiPage({ mode }) {
                   title="Erase Note (⌫)"
                 >
                   ⌫
+                </button>
+
+                {/* Hide / Collapse Panel Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowKeypad(false)}
+                  className="px-2 py-1 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 text-xs font-semibold flex items-center gap-1 active:scale-95 transition-all"
+                  title="Hide Typing Panel"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  <span className="hidden xs:inline">Hide</span>
                 </button>
               </div>
             </div>
@@ -1225,6 +1256,22 @@ export function SwaralipiPage({ mode }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Floating Button to Re-Open Typing Panel when Hidden */}
+      {canEdit && !showKeypad && (
+        <div className="fixed bottom-4 right-4 z-40 no-print">
+          <button
+            type="button"
+            onClick={() => setShowKeypad(true)}
+            className="px-4 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-2xl shadow-purple-900/60 border border-purple-400/50 active:scale-95 transition-all"
+            title="Open Typing Panel (Harmonium Keyboard & Swara Pad)"
+          >
+            <Keyboard className="w-4 h-4 text-purple-200" />
+            <span>Show Typing Panel</span>
+            <ChevronUp className="w-4 h-4 text-purple-200" />
+          </button>
         </div>
       )}
 
