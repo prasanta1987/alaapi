@@ -7,7 +7,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['Inter', '"Noto Sans Bengali"', 'sans-serif'],
+        bengali: ['"Noto Sans Bengali"', 'sans-serif'],
       },
       screens: {
         'xs': '480px',

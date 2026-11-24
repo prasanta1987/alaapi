@@ -563,7 +563,7 @@ export function SwaralipiPage({ mode }) {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-950 text-gray-100 min-h-screen relative font-['Noto_Sans_Bengali',_'Inter',_sans-serif]">
+    <div className="flex-1 flex flex-col bg-gray-950 text-gray-100 min-h-screen relative font-bengali">
       {/* Toast Notice */}
       {statusNotice && (
         <div
@@ -814,7 +814,7 @@ export function SwaralipiPage({ mode }) {
         <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-3 sm:p-6 shadow-2xl flex flex-col gap-4 print:bg-white print:border-none print:shadow-none print:p-0">
           {/* Printable White-Paper Header */}
           <div className="hidden print:block text-center pb-4 mb-4 border-b-2 border-black">
-            <h1 className="text-2xl font-bold text-black font-['Noto_Sans_Bengali']">{title || 'স্বরলিপি'}</h1>
+            <h1 className="text-2xl font-bold text-black font-bengali">{title || 'স্বরলিপি'}</h1>
             <p className="text-xs text-gray-800 mt-1">
               তাল: {currentTaalObj.name}  •  স্কেল: {SCALE_OPTIONS.find(s => s.value === scaleOffset)?.label}  •  লয়: {bpm} BPM  •  শিক্ষক: {teacherName || 'Alaapi Studio'}
             </p>
@@ -869,25 +869,25 @@ export function SwaralipiPage({ mode }) {
                           }`}
                         >
                           {/* Swara Display with High (Tara) / Low (Mandra) Octave Dots */}
-                          <div className="h-8 mb-3.5 flex flex-col items-center justify-center relative leading-none font-bold text-xl print:text-black">
+                          <div className="relative w-full h-8 mb-3.5 flex items-center justify-center font-bengali select-none print:text-black">
                             {cell.swara ? (
                               <>
                                 {cell.oct >= 1 && (
-                                  <span className="absolute -top-1 text-[11px] text-purple-400 print:text-black leading-none">
+                                  <span className="absolute top-0 left-1/2 -translate-x-1/2 text-[13px] text-purple-400 print:text-black leading-none font-black pointer-events-none">
                                     •
                                   </span>
                                 )}
-                                <span className="text-white print:text-black font-['Noto_Sans_Bengali']">
+                                <span className="text-white print:text-black font-bengali text-[22px] font-bold leading-none">
                                   {cell.swara}
                                 </span>
                                 {cell.oct <= -1 && (
-                                  <span className="absolute -bottom-1.5 text-[11px] text-blue-400 print:text-black leading-none">
+                                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[13px] text-blue-400 print:text-black leading-none font-black pointer-events-none">
                                     •
                                   </span>
                                 )}
                               </>
                             ) : (
-                              <span className="text-gray-700 print:text-transparent text-sm">·</span>
+                              <span className="text-gray-700 print:text-transparent text-sm leading-none">·</span>
                             )}
                           </div>
 
@@ -906,10 +906,10 @@ export function SwaralipiPage({ mode }) {
                                   return next;
                                 });
                               }}
-                              className="w-full bg-transparent border-t border-gray-800/80 pt-1 text-center text-[11px] text-gray-200 placeholder-gray-700 outline-none print:text-black print:border-gray-300 font-['Noto_Sans_Bengali']"
+                              className="w-full bg-transparent border-t border-gray-800/80 pt-1 text-center text-xs font-medium text-gray-200 placeholder-gray-700 outline-none print:text-black print:border-gray-300 font-bengali"
                             />
                           ) : (
-                            <div className="w-full border-t border-gray-800/80 pt-1 text-center text-[11px] text-gray-300 font-medium truncate min-h-[19px] print:text-black print:border-gray-300 font-['Noto_Sans_Bengali']">
+                            <div className="w-full border-t border-gray-800/80 pt-1 text-center text-xs text-gray-300 font-medium truncate min-h-[19px] print:text-black print:border-gray-300 font-bengali">
                               {cell.lyric || ''}
                             </div>
                           )}
@@ -1058,7 +1058,7 @@ export function SwaralipiPage({ mode }) {
                               flashKey(k.midi);
                             }}
                             style={{ left: `${k.leftPx}px` }}
-                            className={`black-key absolute top-1 w-[30px] h-[80px] rounded-b-lg z-20 flex flex-col justify-end items-center pb-1.5 transition-transform active:scale-95 shadow-lg border ${
+                            className={`black-key absolute top-1 w-[30px] h-[82px] rounded-b-lg z-20 flex flex-col justify-end items-center pb-2 transition-transform active:scale-95 shadow-lg border select-none ${
                               k.isSa
                                 ? 'bg-gradient-to-b from-purple-700 to-purple-900 border-purple-300 text-white'
                                 : pressedMidi === k.midi
@@ -1066,12 +1066,24 @@ export function SwaralipiPage({ mode }) {
                                 : 'bg-gradient-to-b from-gray-800 to-gray-950 border-gray-600 text-gray-200'
                             }`}
                           >
-                            <span className="font-['Noto_Sans_Bengali'] text-xs font-bold leading-tight flex flex-col items-center">
-                              {k.oct >= 1 && <span className="text-[9px] leading-none text-purple-300">•</span>}
-                              <span>{k.swara}</span>
-                              {k.oct <= -1 && <span className="text-[9px] leading-none text-blue-300">•</span>}
+                            <div className="relative w-full h-[32px] flex items-center justify-center font-bengali">
+                              {k.oct >= 1 && (
+                                <span className="absolute top-[0px] left-1/2 -translate-x-1/2 text-[12px] leading-none text-purple-300 font-black pointer-events-none">
+                                  •
+                                </span>
+                              )}
+                              <span className="text-[14px] font-bold leading-none text-white font-bengali">
+                                {k.swara}
+                              </span>
+                              {k.oct <= -1 && (
+                                <span className="absolute bottom-[0px] left-1/2 -translate-x-1/2 text-[12px] leading-none text-blue-300 font-black pointer-events-none">
+                                  •
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[8px] opacity-70 font-mono font-semibold mt-0.5 leading-none text-gray-300">
+                              {k.western}
                             </span>
-                            <span className="text-[8px] opacity-60 font-mono mt-0.5">{k.western}</span>
                           </button>
                         );
                       }
@@ -1084,20 +1096,40 @@ export function SwaralipiPage({ mode }) {
                             handleInsertNote(k.swara, k.semi, k.oct);
                             flashKey(k.midi);
                           }}
-                          className={`white-key w-[44px] h-[126px] mr-[2px] rounded-b-xl flex flex-col justify-end items-center pb-2 transition-transform active:scale-95 border shrink-0 ${
+                          className={`white-key w-[44px] h-[128px] mr-[2px] rounded-b-xl flex flex-col justify-end items-center pb-2.5 transition-transform active:scale-95 border shrink-0 select-none ${
                             k.isSa
-                              ? 'bg-gradient-to-b from-purple-100 to-purple-300 border-purple-600 text-purple-950 font-black'
+                              ? 'bg-gradient-to-b from-purple-100 to-purple-300 border-purple-600 text-purple-950'
                               : pressedMidi === k.midi
-                              ? 'bg-gradient-to-b from-purple-300 to-purple-500 border-purple-600 text-white font-bold'
-                              : 'bg-gradient-to-b from-gray-100 to-gray-300 border-gray-400 text-gray-900 font-bold'
+                              ? 'bg-gradient-to-b from-purple-300 to-purple-500 border-purple-600 text-white'
+                              : 'bg-gradient-to-b from-white to-gray-200 border-gray-400 text-gray-900'
                           }`}
                         >
-                          <span className="font-['Noto_Sans_Bengali'] text-sm font-bold leading-tight flex flex-col items-center">
-                            {k.oct >= 1 && <span className="text-[9px] leading-none text-purple-600">•</span>}
-                            <span>{k.swara}</span>
-                            {k.oct <= -1 && <span className="text-[9px] leading-none text-blue-600">•</span>}
+                          <div className="relative w-full h-[36px] flex items-center justify-center font-bengali">
+                            {k.oct >= 1 && (
+                              <span className="absolute top-[1px] left-1/2 -translate-x-1/2 text-[13px] leading-none text-purple-700 font-black pointer-events-none">
+                                •
+                              </span>
+                            )}
+                            <span
+                              className={`text-[16px] font-bold leading-none font-bengali ${
+                                k.isSa ? 'text-purple-900 font-black' : 'text-slate-900'
+                              }`}
+                            >
+                              {k.swara}
+                            </span>
+                            {k.oct <= -1 && (
+                              <span className="absolute bottom-[1px] left-1/2 -translate-x-1/2 text-[13px] leading-none text-blue-700 font-black pointer-events-none">
+                                •
+                              </span>
+                            )}
+                          </div>
+                          <span
+                            className={`text-[9px] font-mono font-semibold mt-0.5 leading-none ${
+                              k.isSa ? 'text-purple-900 opacity-80' : 'text-slate-600 opacity-80'
+                            }`}
+                          >
+                            {k.western}
                           </span>
-                          <span className="text-[8px] opacity-70 font-mono mt-0.5">{k.western}</span>
                         </button>
                       );
                     })}
@@ -1155,7 +1187,7 @@ export function SwaralipiPage({ mode }) {
                       key={k.swara}
                       type="button"
                       onClick={() => handleInsertNote(k.swara, k.semi, currentOctave)}
-                      className="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl py-2 flex flex-col items-center justify-center font-bold text-lg text-white font-['Noto_Sans_Bengali'] active:scale-95 transition-all shadow"
+                      className="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl py-2 flex flex-col items-center justify-center font-bold text-lg text-white font-bengali active:scale-95 transition-all shadow"
                     >
                       <span>{k.swara}</span>
                       <span className="text-[9px] font-sans text-gray-400">{k.western}</span>
@@ -1179,7 +1211,7 @@ export function SwaralipiPage({ mode }) {
                       key={k.swara}
                       type="button"
                       onClick={() => handleInsertNote(k.swara, k.semi, currentOctave)}
-                      className={`border rounded-xl py-2 flex flex-col items-center justify-center font-bold text-base font-['Noto_Sans_Bengali'] active:scale-95 transition-all shadow ${
+                      className={`border rounded-xl py-2 flex flex-col items-center justify-center font-bold text-base font-bengali active:scale-95 transition-all shadow ${
                         k.isKomal
                           ? 'bg-purple-950/40 border-purple-500/40 text-purple-200'
                           : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'

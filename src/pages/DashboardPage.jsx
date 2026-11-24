@@ -522,7 +522,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <h4 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors font-['Noto_Sans_Bengali'] line-clamp-1">
+                      <h4 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors font-bengali line-clamp-1">
                         {sheet.title || 'স্বরলিপি'}
                       </h4>
                       {isTeacher && (

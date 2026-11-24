@@ -1,6 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Crisp typography smoothing */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.font-bengali {
+  font-family: 'Noto Sans Bengali', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
 
 /* Viewport & Body Setup */
 :root {
@@ -13,7 +26,7 @@
 html,
 body,
 #root {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
   height: 100%;
   height: 100dvh;
   margin: 0;
