@@ -422,7 +422,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6 lg:h-[calc(100dvh-6.5rem)] flex flex-col">
           <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-5 lg:p-6 shadow-xl flex flex-col justify-between lg:h-full overflow-y-auto gap-3 sm:gap-4">
             {/* User Identity: Compact horizontal row on mobile, Centered vertical column on desktop */}
-            <div className="flex flex-row lg:flex-col items-center lg:items-center gap-3.5 sm:gap-4 lg:gap-0 text-left lg:text-center">
+            <div className="relative flex flex-row lg:flex-col items-center lg:items-center gap-3.5 sm:gap-4 lg:gap-0 text-left lg:text-center w-full pr-16 lg:pr-0">
               {/* Avatar: Compact on mobile, Prominent on desktop */}
               <div className="relative shrink-0 lg:mb-3">
                 <UserAvatar
@@ -438,17 +438,18 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                 <h2 className="text-base sm:text-lg lg:text-xl font-black text-white truncate w-full">
                   {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
                 </h2>
-                <div className="mt-1.5 flex items-center lg:justify-center">
-                  <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border shrink-0 ${isAdmin
-                    ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
-                    : isTeacher
-                      ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
-                      : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
-                    }`}>
-                    {role}
-                  </span>
-                </div>
-                <p className="text-purple-300 text-xs font-semibold mt-1">
+
+                {/* Role Badge: Top-right corner on mobile, Centered below name on desktop */}
+                <span className={`absolute top-0 right-0 lg:static lg:mt-1.5 inline-flex items-center text-[9px] lg:text-[10px] font-bold uppercase tracking-wider px-2 lg:px-2.5 py-0.5 rounded-full border shrink-0 ${isAdmin
+                  ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
+                  : isTeacher
+                    ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
+                    : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
+                  }`}>
+                  {role}
+                </span>
+
+                <p className="text-purple-300 text-xs font-semibold mt-0.5 lg:mt-1">
                   {userProfile?.instrument || 'Indian Classical Vocals'}
                 </p>
 
