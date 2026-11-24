@@ -110,6 +110,15 @@ export function SwaralipiPage({ mode }) {
   const kbdScrollerRef = useRef(null);
   const rowsContainerRef = useRef(null);
 
+  // Auto-scroll to top when page mounts
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    const scrollParent = document.querySelector('main.overflow-y-auto') || document.documentElement || document.body;
+    if (scrollParent) {
+      scrollParent.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, []);
+
   // Instantiate playback engine once
   useEffect(() => {
     playbackEngineRef.current = new SwaralipiPlaybackEngine();
@@ -750,7 +759,7 @@ export function SwaralipiPage({ mode }) {
       </header>
 
       {/* Main Sheet Container */}
-      <main
+      <div
         ref={sheetContainerRef}
         className={`flex-1 w-full max-w-4xl mx-auto p-3 sm:p-6 transition-all duration-200 ${
           canEdit && showKeypad ? 'pb-72 sm:pb-80' : 'pb-16'
@@ -951,7 +960,7 @@ export function SwaralipiPage({ mode }) {
             ))}
           </div>
         </div>
-      </main>
+      </div>
 
       {/* Sticky Bottom Dock: Harmonium Keyboard <-> Bengali Swara Pad (Teacher Composer Mode Only) */}
       {canEdit && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CallProvider } from './context/CallContext';
@@ -22,6 +22,15 @@ export function AppContent() {
   const [deviceSetupOpen, setDeviceSetupOpen] = useState(false);
   const [deviceSetupTab, setDeviceSetupTab] = useState(null);
   const location = useLocation();
+  const mainContentRef = useRef(null);
+
+  // Automatically scroll to the top of the viewport and main scroll container on every route transition
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, [location.pathname]);
 
   // Hide the Navbar when inside an active WebRTC call room
   const isInCall = location.pathname.startsWith('/room/');
@@ -100,7 +109,10 @@ export function AppContent() {
           </Routes>
         </div>
       ) : (
-        <main className={`flex-1 w-full ${isFullCanvasPage ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
+        <main
+          ref={mainContentRef}
+          className={`flex-1 w-full ${isFullCanvasPage ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}
+        >
           <Routes>
             <Route
               path="/"
