@@ -7,6 +7,7 @@ export const SWARA_MAP = ['স', 'ঋ', 'র', 'জ্ঞ', 'গ', 'ম', 'হ�
 export const WESTERN_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'B♭', 'B'];
 export const IS_BLACK = [false, true, false, true, false, false, true, false, true, false, true, false];
 
+/*
 export const SCALE_OPTIONS = [
   { value: 0, label: 'Sa = C' },
   { value: 1, label: 'Sa = C# (Kali 1)' },
@@ -20,6 +21,24 @@ export const SCALE_OPTIONS = [
   { value: 11, label: 'Sa = B' },
   { value: 12, label: 'Sa = F#' }
 ];
+
+*/
+
+export const SCALE_OPTIONS = [
+  { value: 0, label: 'Sa = C' },
+  { value: 1, label: 'Sa = C# (Kali 1)' },
+  { value: 2, label: 'Sa = D' },
+  { value: 3, label: 'Sa = D# (E♭)' },
+  { value: 4, label: 'Sa = E' },
+  { value: 5, label: 'Sa = F' },
+  { value: 6, label: 'Sa = F# (G♭)' },
+  { value: 7, label: 'Sa = G' },
+  { value: 8, label: 'Sa = G# (Kali 4)' },
+  { value: 9, label: 'Sa = A' },
+  { value: 10, label: 'Sa = B♭ (Kali 5)' },
+  { value: 11, label: 'Sa = B' },
+];
+
 
 export const TAALS = {
   free: { id: 'free', name: 'মুক্ত (Free / Alankar)', beats: 8, bars: [] },
