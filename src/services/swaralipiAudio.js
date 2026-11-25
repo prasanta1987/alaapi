@@ -18,6 +18,7 @@ export const SCALE_OPTIONS = [
   { value: 9, label: 'Sa = A' },
   { value: 10, label: 'Sa = B♭ (Kali 5)' },
   { value: 11, label: 'Sa = B' },
+  { value: 12, label: 'Sa = F#' }
 ];
 
 export const TAALS = {
