@@ -12,7 +12,8 @@ import {
   deleteDoc,
   getDocs,
   query,
-  where
+  where,
+  serverTimestamp
 } from '../services/firebase';
 import {
   RINGTONE_OPTIONS,
@@ -53,6 +54,7 @@ import {
 } from 'lucide-react';
 import { TAALS, SCALE_OPTIONS } from '../services/swaralipiAudio';
 import { UserAvatar } from '../components/UserAvatar';
+import { AssignSwaralipiModal } from '../components/AssignSwaralipiModal';
 
 export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }) {
   const { currentUser, userProfile, isAdmin, loginWithGoogle } = useAuth();
@@ -71,6 +73,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const [isPlayingTestTone, setIsPlayingTestTone] = useState(false);
   const [swaralipiSheets, setSwaralipiSheets] = useState([]);
   const [loadingSheets, setLoadingSheets] = useState(true);
+  const [assigningSheet, setAssigningSheet] = useState(null);
 
   // Periodic tick (every 10 seconds) to ensure real-time Online/Offline status updates
   const [, setTick] = useState(0);
@@ -194,6 +197,41 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
     } catch (err) {
       console.error("Failed to delete sheet:", err);
       alert("Failed to delete sheet: " + err.message);
+    }
+  };
+
+  // Toggle Student Practice Status (Completed / Pending)
+  const handleToggleStudentPractice = async (sheet) => {
+    if (!currentUser?.uid || !sheet?.id) return;
+    try {
+      const isCompleted = Boolean(sheet.completions?.[currentUser.uid]?.completed);
+      const sheetRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', sheet.id);
+      const updatedCompletion = !isCompleted
+        ? {
+            completed: true,
+            completedAt: new Date().toISOString(),
+            studentName: userProfile?.displayName || currentUser.displayName || 'Student'
+          }
+        : {
+            completed: false,
+            uncompletedAt: new Date().toISOString(),
+            studentName: userProfile?.displayName || currentUser.displayName || 'Student'
+          };
+
+      await updateDoc(sheetRef, {
+        [`completions.${currentUser.uid}`]: updatedCompletion,
+        updatedAt: serverTimestamp()
+      });
+
+      setRoleUpdateMsg(
+        !isCompleted
+          ? `🎉 Great job! Marked "${sheet.title || 'Swaralipi'}" as practiced.`
+          : `Marked "${sheet.title || 'Swaralipi'}" as practice pending.`
+      );
+      setTimeout(() => setRoleUpdateMsg(''), 3000);
+    } catch (err) {
+      console.error('Failed to update practice status:', err);
+      setCallNotice('Failed to update practice status: ' + err.message);
     }
   };
 
@@ -382,12 +420,20 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const visibleSheets = swaralipiSheets.filter(sheet => {
     if (isAdmin) return true;
     if (role === 'teacher') {
+      // Teacher sees all sheets they created (saved in library + assigned)
       return sheet.teacherId === currentUser?.uid;
     }
-    // Student view: match studentId or assigned teacher or unassigned public sheet
+    // Student view: must be assigned to this student
+    const assignedList = Array.isArray(sheet.assignedTo) ? sheet.assignedTo : [];
+    if (assignedList.length > 0) {
+      return assignedList.includes(currentUser?.uid);
+    }
+    // Backwards compatibility for legacy single-student sheets
     if (sheet.studentId && sheet.studentId === currentUser?.uid) return true;
-    if (assignedTeacherId && sheet.teacherId === assignedTeacherId) return true;
-    if (!sheet.studentId) return true;
+    // Legacy sheets assigned to "all" before new assignment system
+    if (sheet.studentId === 'ALL' || (!sheet.studentId && !sheet.assignedTo && sheet.teacherId === assignedTeacherId)) {
+      return true;
+    }
     return false;
   });
 
@@ -1205,49 +1251,123 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                       </span>
                     </div>
 
-                    <div className="text-[11px] text-gray-400 flex items-center justify-between gap-2 border-t border-gray-800/80 pt-2 mb-3">
+                    <div className="flex flex-col gap-1 border-t border-gray-800/80 pt-2 mb-3">
+                      <div className="flex items-center justify-between gap-1 text-[11px] text-gray-400">
+                        {isTeacher ? (
+                          sheet.assignedTo && sheet.assignedTo.length > 0 ? (
+                            <span className="truncate text-purple-300 font-semibold flex items-center gap-1">
+                              <Users className="w-3 h-3 text-purple-400 shrink-0" />
+                              Assigned: {sheet.assignedTo.length} {sheet.assignedTo.length === 1 ? 'Student' : 'Students'}
+                            </span>
+                          ) : (
+                            <span className="truncate text-gray-500 italic">
+                              📁 In Library (Unassigned)
+                            </span>
+                          )
+                        ) : (
+                          <span className="truncate text-gray-300">
+                            👨‍🏫 {sheet.teacherName || 'Instructor'}
+                          </span>
+                        )}
+
+                        <span className="text-gray-500 text-[10px] shrink-0">
+                          {sheet.updatedAt?.toDate ? sheet.updatedAt.toDate().toLocaleDateString() : 'Recent'}
+                        </span>
+                      </div>
+
+                      {/* Practice Progress Bar / Badge */}
                       {isTeacher ? (
-                        <span className="truncate">
-                          🎯 {sheet.studentName ? `Assigned: ${sheet.studentName}` : 'For All Students'}
-                        </span>
+                        sheet.assignedTo && sheet.assignedTo.length > 0 && (() => {
+                          const doneCount = sheet.assignedTo.filter(sId => sheet.completions?.[sId]?.completed).length;
+                          return (
+                            <div className="flex items-center justify-between gap-2 mt-0.5">
+                              <span className="text-[10px] text-gray-400">Practice Status:</span>
+                              <button
+                                type="button"
+                                onClick={() => setAssigningSheet(sheet)}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 transition-all ${
+                                  doneCount > 0
+                                    ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/60'
+                                    : 'bg-gray-900 border-gray-700/80 text-gray-400 hover:text-gray-200'
+                                }`}
+                                title="Click to view student practice breakdown"
+                              >
+                                <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                <span>{doneCount}/{sheet.assignedTo.length} Practiced</span>
+                              </button>
+                            </div>
+                          );
+                        })()
                       ) : (
-                        <span className="truncate">
-                          👨‍🏫 {sheet.teacherName || 'Instructor'}
-                        </span>
+                        <div className="flex items-center justify-between gap-2 mt-0.5">
+                          <span className="text-[10px] text-gray-400">Your Practice:</span>
+                          {sheet.completions?.[currentUser?.uid]?.completed ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-600/40 px-2 py-0.5 rounded-full">
+                              <CheckCircle className="w-3 h-3" />
+                              Practiced
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-yellow-400/90 bg-yellow-950/40 border border-yellow-700/40 px-2 py-0.5 rounded-full">
+                              <Clock className="w-3 h-3" />
+                              Practice Pending
+                            </span>
+                          )}
+                        </div>
                       )}
-                      <span className="text-gray-500 text-[10px] shrink-0">
-                        {sheet.updatedAt?.toDate ? sheet.updatedAt.toDate().toLocaleDateString() : 'Recent'}
-                      </span>
                     </div>
                   </div>
 
                   {isTeacher ? (
-                    <div className="grid grid-cols-2 gap-2 mt-auto">
+                    <div className="grid grid-cols-3 gap-1.5 mt-auto">
+                      <button
+                        type="button"
+                        onClick={() => setAssigningSheet(sheet)}
+                        className="py-1.5 px-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center justify-center gap-1 transition-all active:scale-95"
+                        title="Assign this Swaralipi to students"
+                      >
+                        <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        <span className="truncate">Assign</span>
+                      </button>
                       <Link
                         to={`/swaralipi/${sheet.id}`}
-                        className="py-1.5 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/30 transition-all active:scale-95"
+                        className="py-1.5 px-2 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white font-semibold text-xs flex items-center justify-center gap-1 transition-all active:scale-95"
                         title="Open in Composer Mode (with Keyboard)"
                       >
-                        <Edit className="w-3.5 h-3.5" />
-                        <span>Edit</span>
+                        <Edit className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                        <span className="truncate">Edit</span>
                       </Link>
                       <Link
                         to={`/swaralipi/${sheet.id}?view=practice`}
-                        className="py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all active:scale-95"
+                        className="py-1.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1 shadow-md shadow-emerald-900/30 transition-all active:scale-95"
                         title="Open in Clean Practice Mode (No Typing Dock)"
                       >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Play / View</span>
+                        <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                        <span className="truncate">Play</span>
                       </Link>
                     </div>
                   ) : (
-                    <Link
-                      to={`/swaralipi/${sheet.id}?view=practice`}
-                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-900/30 transition-all active:scale-95 mt-auto"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Open & Practice</span>
-                    </Link>
+                    <div className="grid grid-cols-2 gap-2 mt-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStudentPractice(sheet)}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
+                          sheet.completions?.[currentUser?.uid]?.completed
+                            ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/70'
+                            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-200'
+                        }`}
+                        title={sheet.completions?.[currentUser?.uid]?.completed ? 'Click to mark as incomplete' : 'Mark as completed'}
+                      >
+                        <CheckCircle className={`w-3.5 h-3.5 ${sheet.completions?.[currentUser?.uid]?.completed ? 'text-emerald-400' : 'text-gray-400'}`} />
+                        <span className="truncate">{sheet.completions?.[currentUser?.uid]?.completed ? 'Completed' : 'Mark Done'}</span>
+                      </button>
+                      <Link
+                        to={`/swaralipi/${sheet.id}?view=practice`}
+                        className="py-1.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all active:scale-95"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span className="truncate">Practice</span>
+                      </Link>
+                    </div>
                   )}
                 </div>
               );
@@ -1255,6 +1375,23 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
           </div>
         )}
       </section>
+
+      {/* Assign Swaralipi Modal */}
+      {assigningSheet && (
+        <AssignSwaralipiModal
+          isOpen={Boolean(assigningSheet)}
+          onClose={() => setAssigningSheet(null)}
+          sheet={assigningSheet}
+          students={studentsList}
+          onAssigned={(updatedSheet) => {
+            setSwaralipiSheets(prev =>
+              prev.map(s => s.id === updatedSheet.id ? { ...s, ...updatedSheet } : s)
+            );
+            setRoleUpdateMsg(`Updated student assignment for "${updatedSheet.title || 'Swaralipi'}".`);
+            setTimeout(() => setRoleUpdateMsg(''), 3000);
+          }}
+        />
+      )}
 
         </div>
       </div>

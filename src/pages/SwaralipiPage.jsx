@@ -45,8 +45,10 @@ import {
   GraduationCap,
   Keyboard,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Clock
 } from 'lucide-react';
+import { AssignSwaralipiModal } from '../components/AssignSwaralipiModal';
 
 function createEmptyRow(beats) {
   return Array.from({ length: beats }, () => ({
@@ -92,6 +94,11 @@ export function SwaralipiPage({ mode }) {
   const [teacherName, setTeacherName] = useState(userProfile?.displayName || currentUser?.displayName || '');
   const [studentId, setStudentId] = useState('');
   const [studentName, setStudentName] = useState('');
+  const [assignedTo, setAssignedTo] = useState([]);
+  const [assignedStudentNames, setAssignedStudentNames] = useState([]);
+  const [completions, setCompletions] = useState({});
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isUpdatingPractice, setIsUpdatingPractice] = useState(false);
   const [assignedStudents, setAssignedStudents] = useState([]);
   const [loadingDoc, setLoadingDoc] = useState(Boolean(id));
   const [savingDoc, setSavingDoc] = useState(false);
@@ -175,6 +182,9 @@ export function SwaralipiPage({ mode }) {
           setTeacherName(data.teacherName || '');
           setStudentId(data.studentId || '');
           setStudentName(data.studentName || '');
+          setAssignedTo(Array.isArray(data.assignedTo) ? data.assignedTo : (data.studentId && data.studentId !== 'MULTI' ? [data.studentId] : []));
+          setAssignedStudentNames(Array.isArray(data.assignedStudentNames) ? data.assignedStudentNames : (data.studentName ? [data.studentName] : []));
+          setCompletions(data.completions || {});
 
           if (data.rowsJson) {
             try {
@@ -496,9 +506,10 @@ export function SwaralipiPage({ mode }) {
       const targetDocId = id && mode !== 'new' ? id : doc(collection(db, 'artifacts', appId, 'public', 'data', 'swaralipi')).id;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', targetDocId);
 
-      // Selected student info
-      const studentObj = assignedStudents.find(s => s.id === studentId);
-      const finalStudentName = studentObj ? (studentObj.displayName || studentObj.email) : (studentId ? 'Student' : 'All Students');
+      // Student info resolution
+      const finalStudentNames = assignedStudents
+        .filter(s => assignedTo.includes(s.id))
+        .map(s => s.displayName || s.email || 'Student');
 
       const payload = {
         title: title.trim() || 'স্বরলিপি',
@@ -508,28 +519,86 @@ export function SwaralipiPage({ mode }) {
         rowsJson: JSON.stringify(rows),
         teacherId: currentUser.uid,
         teacherName: userProfile?.displayName || currentUser.displayName || 'Instructor',
-        studentId: studentId || '',
-        studentName: finalStudentName,
+        assignedTo: assignedTo || [],
+        assignedStudentNames: finalStudentNames.length > 0 ? finalStudentNames : assignedStudentNames,
+        // Legacy fields for backward compatibility
+        studentId: assignedTo.length === 1 ? assignedTo[0] : (assignedTo.length > 1 ? 'MULTI' : ''),
+        studentName: assignedTo.length === 1
+          ? (finalStudentNames[0] || 'Student')
+          : (assignedTo.length > 1 ? `${assignedTo.length} Students` : ''),
+        completions: completions || {},
         updatedAt: serverTimestamp()
       };
 
       if (!id || mode === 'new') {
         payload.createdAt = serverTimestamp();
         await setDoc(docRef, payload);
-        setStatusNotice({ type: 'success', message: 'Swaralipi homework created successfully!' });
+        setStatusNotice({
+          type: 'success',
+          message: assignedTo.length > 0
+            ? `Swaralipi created and assigned to ${assignedTo.length} student(s)!`
+            : 'Swaralipi saved to library for future use!'
+        });
         setTimeout(() => {
           navigate(`/swaralipi/${targetDocId}`, { replace: true });
         }, 1200);
       } else {
         await updateDoc(docRef, payload);
-        setStatusNotice({ type: 'success', message: 'Swaralipi homework saved successfully!' });
+        setStatusNotice({
+          type: 'success',
+          message: assignedTo.length > 0
+            ? 'Swaralipi and student assignments saved successfully!'
+            : 'Swaralipi saved to library successfully!'
+        });
         setTimeout(() => setStatusNotice(null), 3500);
       }
     } catch (err) {
       console.error('Error saving Swaralipi sheet:', err);
-      setStatusNotice({ type: 'error', message: 'Failed to save homework: ' + err.message });
+      setStatusNotice({ type: 'error', message: 'Failed to save: ' + err.message });
     } finally {
       setSavingDoc(false);
+    }
+  };
+
+  // Student Practice Completion Toggle
+  const handleToggleStudentPractice = async () => {
+    if (!id || !currentUser) return;
+    try {
+      setIsUpdatingPractice(true);
+      const isDone = Boolean(completions[currentUser.uid]?.completed);
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', id);
+      const updatedCompletion = !isDone
+        ? {
+            completed: true,
+            completedAt: new Date().toISOString(),
+            studentName: userProfile?.displayName || currentUser.displayName || 'Student'
+          }
+        : {
+            completed: false,
+            uncompletedAt: new Date().toISOString(),
+            studentName: userProfile?.displayName || currentUser.displayName || 'Student'
+          };
+
+      await updateDoc(docRef, {
+        [`completions.${currentUser.uid}`]: updatedCompletion,
+        updatedAt: serverTimestamp()
+      });
+
+      setCompletions(prev => ({
+        ...prev,
+        [currentUser.uid]: updatedCompletion
+      }));
+
+      setStatusNotice({
+        type: 'success',
+        message: !isDone ? '🎉 Great job! Marked as practiced.' : 'Marked practice as pending.'
+      });
+      setTimeout(() => setStatusNotice(null), 3000);
+    } catch (err) {
+      console.error('Failed to update practice completion:', err);
+      setStatusNotice({ type: 'error', message: 'Failed to update status: ' + err.message });
+    } finally {
+      setIsUpdatingPractice(false);
     }
   };
 
@@ -744,6 +813,29 @@ export function SwaralipiPage({ mode }) {
             </button>
           )}
 
+          {/* Student Practice Completion Button (Visible when student is viewing or practice mode) */}
+          {id && currentUser && !canEdit && (
+            <button
+              onClick={handleToggleStudentPractice}
+              disabled={isUpdatingPractice}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${
+                completions[currentUser?.uid]?.completed
+                  ? 'bg-emerald-950/90 border border-emerald-500/70 text-emerald-300 hover:bg-emerald-900/80 shadow-emerald-950/40'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40'
+              }`}
+              title={
+                completions[currentUser?.uid]?.completed
+                  ? 'Click to unmark practice completion'
+                  : 'Mark this Swaralipi as practiced'
+              }
+            >
+              <CheckCircle className={`w-3.5 h-3.5 ${completions[currentUser?.uid]?.completed ? 'text-emerald-400' : 'text-white'}`} />
+              <span>
+                {completions[currentUser?.uid]?.completed ? '✓ Practiced' : 'Mark Completed'}
+              </span>
+            </button>
+          )}
+
           {/* Teacher Save Button */}
           {canEdit && (
             <button
@@ -752,7 +844,13 @@ export function SwaralipiPage({ mode }) {
               className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-900/40 transition-all active:scale-95"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{savingDoc ? 'Saving...' : 'Save Homework'}</span>
+              <span>
+                {savingDoc
+                  ? 'Saving...'
+                  : assignedTo.length > 0
+                  ? 'Save & Assign'
+                  : 'Save to Library'}
+              </span>
             </button>
           )}
         </div>
@@ -789,22 +887,40 @@ export function SwaralipiPage({ mode }) {
           {/* Teacher Student Assignment Controls & Toggle Panel Button */}
           {canEdit && (
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <div className="flex items-center gap-1 bg-gray-950 px-2 py-1.5 rounded-xl border border-gray-800 text-xs shrink-0">
-                <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="text-gray-400 font-medium hidden md:inline text-[11px]">Assign:</span>
-                <select
-                  value={studentId}
-                  onChange={(e) => setStudentId(e.target.value)}
-                  className="bg-transparent text-gray-200 text-xs font-semibold outline-none cursor-pointer max-w-[100px] sm:max-w-[150px] truncate"
-                >
-                  <option value="" className="bg-gray-900">All My Students</option>
-                  {assignedStudents.map(st => (
-                    <option key={st.id} value={st.id} className="bg-gray-900">
-                      {st.displayName || st.email || 'Student'}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Assign to Students Button (Opens Modal) */}
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(true)}
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/60 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shrink-0"
+                title="Assign this Swaralipi to students"
+              >
+                <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>
+                  {assignedTo.length === 0
+                    ? 'Assign Students'
+                    : `Assigned (${assignedTo.length})`}
+                </span>
+              </button>
+
+              {/* Practice Progress Pill */}
+              {assignedTo.length > 0 && (() => {
+                const doneCount = assignedTo.filter(sId => completions[sId]?.completed).length;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setIsAssignModalOpen(true)}
+                    className={`px-2 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1 transition-all shrink-0 ${
+                      doneCount > 0
+                        ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/80'
+                        : 'bg-gray-950/80 border-gray-800 text-gray-400 hover:text-gray-300'
+                    }`}
+                    title="Click to view student practice status"
+                  >
+                    <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>{doneCount}/{assignedTo.length} Practiced</span>
+                  </button>
+                );
+              })()}
 
               <button
                 type="button"
@@ -842,6 +958,30 @@ export function SwaralipiPage({ mode }) {
             </div>
           )}
         </div>
+
+        {/* Student Completed Practice Banner */}
+        {!canEdit && currentUser && completions[currentUser.uid]?.completed && (
+          <div className="bg-emerald-950/50 border border-emerald-500/50 rounded-2xl p-2.5 px-3.5 flex items-center justify-between text-xs text-emerald-300 shadow-md mb-3 no-print">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                You marked this Swaralipi as <strong>Practiced</strong>!
+                {completions[currentUser.uid]?.completedAt && (
+                  <span className="text-emerald-400/80 text-[11px] ml-1">
+                    ({new Date(completions[currentUser.uid].completedAt).toLocaleDateString()})
+                  </span>
+                )}
+              </span>
+            </div>
+            <button
+              onClick={handleToggleStudentPractice}
+              disabled={isUpdatingPractice}
+              className="text-[11px] text-emerald-400 hover:text-emerald-200 underline transition-colors"
+            >
+              Mark Incomplete
+            </button>
+          </div>
+        )}
 
         {/* Visual Akarmatrik Swaralipi Sheet Card */}
         <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-3 sm:p-6 shadow-2xl flex flex-col gap-4 print:bg-white print:border-none print:shadow-none print:p-0">
@@ -1299,6 +1439,31 @@ export function SwaralipiPage({ mode }) {
           </button>
         </div>
       )}
+
+      {/* Assign to Students Modal */}
+      <AssignSwaralipiModal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        sheet={{
+          id: id || 'new',
+          title,
+          assignedTo,
+          assignedStudentNames,
+          completions
+        }}
+        students={assignedStudents}
+        onAssigned={(updated) => {
+          setAssignedTo(updated.assignedTo || []);
+          setAssignedStudentNames(updated.assignedStudentNames || []);
+          setStatusNotice({
+            type: 'success',
+            message: updated.assignedTo?.length > 0
+              ? `Assigned to ${updated.assignedTo.length} student(s) successfully!`
+              : 'Sheet saved to library (unassigned).'
+          });
+          setTimeout(() => setStatusNotice(null), 3000);
+        }}
+      />
 
       {/* Print CSS overrides */}
       <style>{`
