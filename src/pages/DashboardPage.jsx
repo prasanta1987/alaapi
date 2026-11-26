@@ -447,7 +447,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const onlineUsersCount = allUsers.filter(u => isUserOnline(u)).length;
 
   return (
-    <div className="p-3 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-7xl 2xl:max-w-[1440px] w-full mx-auto space-y-6">
       {/* Toast Alert for Call Result */}
       {callNotice && (
         <div className="p-3.5 bg-yellow-950/80 border border-yellow-600 text-yellow-300 rounded-2xl text-xs sm:text-sm flex items-center justify-between shadow-lg">
@@ -468,11 +468,11 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
       )}
 
       {/* Main Responsive Layout: Left Sidebar on PC & Tablet (md:), Top Card on Mobile (<md) */}
-      <div className="flex flex-col md:flex-row items-start gap-5 lg:gap-6">
+      <div className="flex flex-col md:flex-row items-start gap-4 lg:gap-5">
 
-        {/* LEFT COLUMN: Sidebar on PC/Tablet (full height), Compact Card on Mobile */}
-        <aside className="w-full md:w-64 lg:w-72 xl:w-80 shrink-0 md:sticky md:top-6 md:h-[calc(100dvh-6.5rem)] flex flex-col">
-          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-5 lg:p-6 shadow-xl flex flex-col justify-between md:h-full overflow-y-auto gap-3 sm:gap-4">
+        {/* LEFT COLUMN: Sidebar on PC/Tablet (full height, ~250px), Compact Card on Mobile */}
+        <aside className="w-full md:w-[250px] shrink-0 md:sticky md:top-6 md:h-[calc(100dvh-6.5rem)] flex flex-col">
+          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-4.5 shadow-xl flex flex-col justify-between md:h-full overflow-y-auto gap-3 sm:gap-4">
             {/* User Identity: Compact horizontal row on mobile, Centered vertical column on tablet & desktop */}
             <div className="relative flex flex-row md:flex-col items-center md:items-center gap-3.5 sm:gap-4 md:gap-0 text-left md:text-center w-full">
               {/* Avatar: Compact on mobile, Prominent on tablet & desktop with Role Icon Badge */}
@@ -481,7 +481,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                   photoURL={currentUser.photoURL || userProfile?.photoURL}
                   name={userProfile?.displayName || currentUser.displayName}
                   size="xl"
-                  className="w-12 h-12 sm:w-14 sm:h-14 md:w-18 md:h-18 lg:w-20 lg:h-20 text-lg md:text-2xl shadow-xl ring-2 ring-purple-500/20"
+                  className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 lg:w-18 lg:h-18 text-lg md:text-xl shadow-xl ring-2 ring-purple-500/20"
                 />
 
                 {/* Role Icon Badge nearby the avatar */}
@@ -507,7 +507,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
 
               {/* Name & Specialization */}
               <div className="min-w-0 flex-1 md:flex-initial flex flex-col items-start md:items-center">
-                <h2 className="text-base sm:text-lg md:text-lg lg:text-xl font-black text-white truncate w-full">
+                <h2 className="text-base sm:text-lg md:text-base lg:text-lg font-black text-white truncate w-full">
                   {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
                 </h2>
 
@@ -534,7 +534,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             {/* Bottom: Library Overview Metric & Action Buttons (Anchored at the bottom) */}
             <div className="mt-auto flex flex-col gap-2.5 w-full pt-4 border-t border-gray-800/80">
               {/* Swaralipi Sheets Metric (Tablet / Desktop view) */}
-              <div className="hidden md:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+              <div className="hidden md:flex items-center justify-between px-3 py-2 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                 <div className="flex items-center gap-2 text-gray-300">
                   <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
                   <span className="text-xs">Swaralipi Sheets</span>
@@ -543,7 +543,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </div>
 
               {!isTeacher && !isAdmin && assignedTeacher && (
-                <div className="hidden md:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                <div className="hidden md:flex items-center justify-between px-3 py-2 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                   <div className="flex items-center gap-2 text-gray-300">
                     <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span className="text-xs">Guru</span>
