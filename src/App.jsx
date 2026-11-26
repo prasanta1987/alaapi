@@ -41,12 +41,7 @@ export function AppContent() {
   };
 
   const handleOpenProfile = () => {
-    if (currentUser) {
-      setDeviceSetupTab('profile');
-      setDeviceSetupOpen(true);
-    } else {
-      setProfileOpen(true);
-    }
+    setProfileOpen(true);
   };
 
   // Support ?settings=open query parameter

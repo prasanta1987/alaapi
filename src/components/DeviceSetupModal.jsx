@@ -3,10 +3,8 @@ import {
   HardwareDevicesTab,
   AudioDspSettingsTab,
   RingtonesTab,
-  TestCallTab,
-  ProfileSettingsTab
+  TestCallTab
 } from './settings_ui';
-import { useAuth } from '../context/AuthContext';
 import { stopRingtone } from '../services/ringtone';
 import {
   X,
@@ -14,32 +12,28 @@ import {
   Sliders,
   Bell,
   PhoneCall,
-  User,
   Settings2
 } from 'lucide-react';
 
 export function DeviceSetupModal({ isOpen, onClose, initialTab }) {
-  const { currentUser } = useAuth();
-
-  // Resolve default tab: if user is logged in -> 'profile', if not logged in -> 'dsp'
+  // Resolve default tab: DSP Audio filters is always the default view
   const getDefaultTab = () => {
-    if (initialTab) {
-      if (initialTab === 'profile' && !currentUser) return 'dsp';
+    if (initialTab && initialTab !== 'profile') {
       return initialTab;
     }
-    return currentUser ? 'profile' : 'dsp';
+    return 'dsp';
   };
 
   const [activeTab, setActiveTab] = useState(getDefaultTab);
 
-  // Reset tab when modal opens or auth state changes
+  // Reset tab when modal opens
   useEffect(() => {
     if (isOpen) {
       setActiveTab(getDefaultTab());
     } else {
       stopRingtone();
     }
-  }, [isOpen, initialTab, currentUser]);
+  }, [isOpen, initialTab]);
 
   // Clean up any test ringtone if tab changes away from ringtones
   const handleTabChange = (tab) => {
@@ -57,17 +51,6 @@ export function DeviceSetupModal({ isOpen, onClose, initialTab }) {
   if (!isOpen) return null;
 
   const tabs = [
-
-    ...(currentUser
-      ? [
-        {
-          id: 'profile',
-          label: 'Profile & Music',
-          shortLabel: 'Profile',
-          icon: User
-        }
-      ]
-      : []),
     {
       id: 'dsp',
       label: 'Audio & DSP Filters',
@@ -148,11 +131,10 @@ export function DeviceSetupModal({ isOpen, onClose, initialTab }) {
 
         {/* Modal Scrollable Body */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1">
-          {activeTab === 'devices' && <HardwareDevicesTab onSaved={handleClose} />}
           {activeTab === 'dsp' && <AudioDspSettingsTab onSaved={handleClose} />}
           {activeTab === 'ringtones' && <RingtonesTab onSaved={handleClose} />}
+          {activeTab === 'devices' && <HardwareDevicesTab onSaved={handleClose} />}
           {activeTab === 'testcall' && <TestCallTab />}
-          {activeTab === 'profile' && <ProfileSettingsTab onSaved={handleClose} />}
         </div>
       </div>
     </div>
