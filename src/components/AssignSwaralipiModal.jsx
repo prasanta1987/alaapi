@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
   Check,
@@ -10,7 +10,7 @@ import {
   BookOpen,
   AlertCircle
 } from 'lucide-react';
-import { db, appId, doc, updateDoc, serverTimestamp } from '../services/firebase';
+import { db, appId, doc, updateDoc, setDoc, serverTimestamp } from '../services/firebase';
 import { UserAvatar } from './UserAvatar';
 
 export function AssignSwaralipiModal({
@@ -26,25 +26,24 @@ export function AssignSwaralipiModal({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Synchronize initial selected students from sheet
-  useEffect(() => {
-    if (!sheet) {
-      setSelectedIds([]);
-      return;
-    }
+  const prevIsOpenRef = useRef(false);
 
-    if (Array.isArray(sheet.assignedTo)) {
-      setSelectedIds(sheet.assignedTo);
-    } else if (sheet.studentId) {
-      // Legacy single student support
-      setSelectedIds([sheet.studentId]);
-    } else {
-      setSelectedIds([]);
+  // Synchronize initial selected students ONLY when the modal transitions from closed to open
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      if (Array.isArray(sheet?.assignedTo)) {
+        setSelectedIds(sheet.assignedTo);
+      } else if (sheet?.studentId && sheet.studentId !== 'MULTI') {
+        setSelectedIds([sheet.studentId]);
+      } else {
+        setSelectedIds([]);
+      }
+      setActiveTab('assign');
+      setErrorMsg('');
+      setSearchQuery('');
     }
-    setActiveTab('assign');
-    setErrorMsg('');
-    setSearchQuery('');
-  }, [sheet, isOpen]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen || !sheet) return null;
 
@@ -85,26 +84,30 @@ export function AssignSwaralipiModal({
   };
 
   const handleSaveAssignment = async () => {
-    if (!sheet?.id) return;
+    if (!sheet) return;
     try {
       setIsSaving(true);
       setErrorMsg('');
 
-      const sheetRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', sheet.id);
       const studentNames = students
         .filter(s => selectedIds.includes(s.id))
         .map(s => s.displayName || s.email || 'Student');
 
-      await updateDoc(sheetRef, {
-        assignedTo: selectedIds,
-        assignedStudentNames: studentNames,
-        // Update legacy studentName and studentId for backwards compatibility
-        studentId: selectedIds.length === 1 ? selectedIds[0] : (selectedIds.length > 1 ? 'MULTI' : ''),
-        studentName: selectedIds.length === 1
-          ? studentNames[0]
-          : (selectedIds.length > 1 ? `${selectedIds.length} Students` : ''),
-        updatedAt: serverTimestamp()
-      });
+      const isExistingDoc = sheet.id && sheet.id !== 'new';
+
+      if (isExistingDoc) {
+        const sheetRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', sheet.id);
+        await setDoc(sheetRef, {
+          assignedTo: selectedIds,
+          assignedStudentNames: studentNames,
+          // Update legacy studentName and studentId for backwards compatibility
+          studentId: selectedIds.length === 1 ? selectedIds[0] : (selectedIds.length > 1 ? 'MULTI' : ''),
+          studentName: selectedIds.length === 1
+            ? studentNames[0]
+            : (selectedIds.length > 1 ? `${selectedIds.length} Students` : ''),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
 
       if (onAssigned) {
         onAssigned({

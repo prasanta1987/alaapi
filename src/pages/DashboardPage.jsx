@@ -55,6 +55,7 @@ import {
 import { TAALS, SCALE_OPTIONS } from '../services/swaralipiAudio';
 import { UserAvatar } from '../components/UserAvatar';
 import { AssignSwaralipiModal } from '../components/AssignSwaralipiModal';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 
 export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSettings }) {
   const { currentUser, userProfile, isAdmin, loginWithGoogle } = useAuth();
@@ -74,6 +75,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   const [swaralipiSheets, setSwaralipiSheets] = useState([]);
   const [loadingSheets, setLoadingSheets] = useState(true);
   const [assigningSheet, setAssigningSheet] = useState(null);
+  const [deletingSheet, setDeletingSheet] = useState(null);
 
   // Periodic tick (every 10 seconds) to ensure real-time Online/Offline status updates
   const [, setTick] = useState(0);
@@ -186,17 +188,21 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
   }, [currentUser]);
 
   // Delete Swaralipi sheet (Teacher / Admin)
-  const handleDeleteSheet = async (sheet) => {
-    const confirmed = window.confirm(`Are you sure you want to delete "${sheet.title || 'Untitled'}"?`);
-    if (!confirmed) return;
+  const handleDeleteSheet = (sheet) => {
+    setDeletingSheet(sheet);
+  };
+
+  const handleConfirmDeleteSheet = async () => {
+    if (!deletingSheet?.id) return;
     try {
-      const sheetRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', sheet.id);
+      const sheetRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', deletingSheet.id);
       await deleteDoc(sheetRef);
-      setRoleUpdateMsg(`Swaralipi "${sheet.title || 'Untitled'}" deleted successfully.`);
+      setRoleUpdateMsg(`Swaralipi "${deletingSheet.title || 'Untitled'}" deleted successfully.`);
       setTimeout(() => setRoleUpdateMsg(''), 3000);
+      setDeletingSheet(null);
     } catch (err) {
       console.error("Failed to delete sheet:", err);
-      alert("Failed to delete sheet: " + err.message);
+      setCallNotice("Failed to delete sheet: " + err.message);
     }
   };
 
@@ -461,47 +467,57 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
         </div>
       )}
 
-      {/* Main Responsive Layout: Left Sidebar on PC (lg:), Top Card on Mobile (<lg) */}
-      <div className="flex flex-col lg:flex-row items-start gap-6">
+      {/* Main Responsive Layout: Left Sidebar on PC & Tablet (md:), Top Card on Mobile (<md) */}
+      <div className="flex flex-col md:flex-row items-start gap-5 lg:gap-6">
 
         {/* LEFT COLUMN: Sidebar on PC/Tablet (full height), Compact Card on Mobile */}
-        <aside className="w-full lg:w-72 xl:w-80 shrink-0 lg:sticky lg:top-6 lg:h-[calc(100dvh-6.5rem)] flex flex-col">
-          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-5 lg:p-6 shadow-xl flex flex-col justify-between lg:h-full overflow-y-auto gap-3 sm:gap-4">
-            {/* User Identity: Compact horizontal row on mobile, Centered vertical column on desktop */}
-            <div className="relative flex flex-row lg:flex-col items-center lg:items-center gap-3.5 sm:gap-4 lg:gap-0 text-left lg:text-center w-full pr-16 lg:pr-0">
-              {/* Avatar: Compact on mobile, Prominent on desktop */}
-              <div className="relative shrink-0 lg:mb-3">
+        <aside className="w-full md:w-64 lg:w-72 xl:w-80 shrink-0 md:sticky md:top-6 md:h-[calc(100dvh-6.5rem)] flex flex-col">
+          <div className="bg-gray-900/90 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-5 lg:p-6 shadow-xl flex flex-col justify-between md:h-full overflow-y-auto gap-3 sm:gap-4">
+            {/* User Identity: Compact horizontal row on mobile, Centered vertical column on tablet & desktop */}
+            <div className="relative flex flex-row md:flex-col items-center md:items-center gap-3.5 sm:gap-4 md:gap-0 text-left md:text-center w-full">
+              {/* Avatar: Compact on mobile, Prominent on tablet & desktop with Role Icon Badge */}
+              <div className="relative shrink-0 md:mb-3">
                 <UserAvatar
                   photoURL={currentUser.photoURL || userProfile?.photoURL}
                   name={userProfile?.displayName || currentUser.displayName}
                   size="xl"
-                  className="w-12 h-12 sm:w-14 sm:h-14 lg:w-20 lg:h-20 text-lg lg:text-2xl shadow-xl ring-2 ring-purple-500/20"
+                  className="w-12 h-12 sm:w-14 sm:h-14 md:w-18 md:h-18 lg:w-20 lg:h-20 text-lg md:text-2xl shadow-xl ring-2 ring-purple-500/20"
                 />
+
+                {/* Role Icon Badge nearby the avatar */}
+                <div
+                  className={`absolute -bottom-1 -right-1 md:bottom-0 md:right-0 p-1 md:p-1.5 rounded-full border shadow-md flex items-center justify-center transition-all ${
+                    isAdmin
+                      ? 'bg-purple-950 text-purple-300 border-purple-500/80 shadow-purple-950/60'
+                      : isTeacher
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-500/80 shadow-emerald-950/60'
+                        : 'bg-blue-950 text-blue-300 border-blue-500/80 shadow-blue-950/60'
+                  }`}
+                  title={role.toUpperCase()}
+                >
+                  {isAdmin ? (
+                    <ShieldCheck className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  ) : isTeacher ? (
+                    <GraduationCap className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  ) : (
+                    <Music className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  )}
+                </div>
               </div>
 
-              {/* Name, Badge & Specialization */}
-              <div className="min-w-0 flex-1 lg:flex-initial flex flex-col items-start lg:items-center">
-                <h2 className="text-base sm:text-lg lg:text-xl font-black text-white truncate w-full">
+              {/* Name & Specialization */}
+              <div className="min-w-0 flex-1 md:flex-initial flex flex-col items-start md:items-center">
+                <h2 className="text-base sm:text-lg md:text-lg lg:text-xl font-black text-white truncate w-full">
                   {userProfile?.displayName || currentUser.displayName || 'Vocalist'}
                 </h2>
 
-                {/* Role Badge: Top-right corner on mobile, Centered below name on desktop */}
-                <span className={`absolute top-0 right-0 lg:static lg:mt-1.5 inline-flex items-center text-[9px] lg:text-[10px] font-bold uppercase tracking-wider px-2 lg:px-2.5 py-0.5 rounded-full border shrink-0 ${isAdmin
-                  ? 'bg-purple-900/60 text-purple-300 border-purple-500/50'
-                  : isTeacher
-                    ? 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
-                    : 'bg-blue-900/60 text-blue-300 border-blue-500/50'
-                  }`}>
-                  {role}
-                </span>
-
-                <p className="text-purple-300 text-xs font-semibold mt-0.5 lg:mt-1">
+                <p className="text-purple-300 text-xs font-semibold mt-0.5 md:mt-1">
                   {userProfile?.instrument || 'Indian Classical Vocals'}
                 </p>
 
-                {/* Desktop Bio */}
+                {/* Tablet / Desktop Bio */}
                 {userProfile?.bio?.trim() && (
-                  <p className="hidden lg:block text-gray-400 text-xs mt-3 px-3 py-2 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center w-full">
+                  <p className="hidden md:block text-gray-400 text-xs mt-3 px-3 py-2 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center w-full">
                     "{userProfile.bio.trim()}"
                   </p>
                 )}
@@ -510,15 +526,15 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
 
             {/* Mobile Bio (only rendered if present) */}
             {userProfile?.bio?.trim() && (
-              <p className="lg:hidden text-gray-400 text-xs px-3 py-1.5 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center">
+              <p className="md:hidden text-gray-400 text-xs px-3 py-1.5 bg-gray-950/60 rounded-xl border border-gray-800/80 italic leading-relaxed text-center">
                 "{userProfile.bio.trim()}"
               </p>
             )}
 
             {/* Bottom: Library Overview Metric & Action Buttons (Anchored at the bottom) */}
             <div className="mt-auto flex flex-col gap-2.5 w-full pt-4 border-t border-gray-800/80">
-              {/* Swaralipi Sheets Metric (Desktop view) */}
-              <div className="hidden lg:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+              {/* Swaralipi Sheets Metric (Tablet / Desktop view) */}
+              <div className="hidden md:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                 <div className="flex items-center gap-2 text-gray-300">
                   <BookOpen className="w-4 h-4 text-purple-400 shrink-0" />
                   <span className="text-xs">Swaralipi Sheets</span>
@@ -527,7 +543,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </div>
 
               {!isTeacher && !isAdmin && assignedTeacher && (
-                <div className="hidden lg:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
+                <div className="hidden md:flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs shadow-inner">
                   <div className="flex items-center gap-2 text-gray-300">
                     <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span className="text-xs">Guru</span>
@@ -536,8 +552,8 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
                 </div>
               )}
 
-              {/* Action Buttons: Row on Mobile (side by side), Stacked Column on Desktop */}
-              <div className="flex flex-row lg:flex-col gap-2 w-full">
+              {/* Action Buttons: Row on Mobile (side by side), Stacked Column on Tablet & Desktop */}
+              <div className="flex flex-row md:flex-col gap-2 w-full">
                 <Link
                   to="/tuner"
                   className="flex-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-all shadow-sm active:scale-95"
@@ -629,7 +645,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               <p className="text-gray-400 text-sm font-medium">No users found matching your criteria.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3.5">
               {adminTargetList.map(user => {
                 const online = isUserOnline(user);
                 return (
@@ -816,7 +832,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3.5">
               {studentsList.map(student => {
                 const online = isUserOnline(student);
                 return (
@@ -929,7 +945,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             {adminsList.length === 0 ? (
               <p className="text-xs text-gray-500 italic">No academy administrators currently listed.</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3.5">
                 {adminsList.map(admin => {
                   const online = isUserOnline(admin);
                   return (
@@ -1213,7 +1229,7 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
             {visibleSheets.map(sheet => {
               const taalObj = TAALS[sheet.taal] || TAALS.free;
               const scaleLabel = SCALE_OPTIONS.find(s => s.value === sheet.scaleOffset)?.label || 'Sa = B♭';
@@ -1389,6 +1405,26 @@ export function DashboardPage({ onOpenProfile, onOpenDeviceSetup, onOpenAudioSet
             );
             setRoleUpdateMsg(`Updated student assignment for "${updatedSheet.title || 'Swaralipi'}".`);
             setTimeout(() => setRoleUpdateMsg(''), 3000);
+          }}
+        />
+      )}
+
+      {/* Delete Swaralipi Confirmation Modal */}
+      {deletingSheet && (
+        <ConfirmationModal
+          isOpen={Boolean(deletingSheet)}
+          onClose={() => setDeletingSheet(null)}
+          onConfirm={handleConfirmDeleteSheet}
+          title="Delete Swaralipi Sheet"
+          message={`Are you sure you want to permanently delete "${deletingSheet.title || 'স্বরলিপি'}"?`}
+          subMessage="This will permanently delete this homework sheet from your library and student rosters."
+          confirmText="Delete Swaralipi"
+          cancelText="Cancel"
+          variant="danger"
+          sheetPreview={{
+            title: deletingSheet.title,
+            taal: TAALS[deletingSheet.taal]?.name || deletingSheet.taal,
+            bpm: deletingSheet.bpm
           }}
         />
       )}

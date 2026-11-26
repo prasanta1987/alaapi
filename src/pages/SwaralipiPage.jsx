@@ -49,6 +49,7 @@ import {
   Clock
 } from 'lucide-react';
 import { AssignSwaralipiModal } from '../components/AssignSwaralipiModal';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 
 function createEmptyRow(beats) {
   return Array.from({ length: beats }, () => ({
@@ -98,11 +99,16 @@ export function SwaralipiPage({ mode }) {
   const [assignedStudentNames, setAssignedStudentNames] = useState([]);
   const [completions, setCompletions] = useState({});
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isUpdatingPractice, setIsUpdatingPractice] = useState(false);
   const [assignedStudents, setAssignedStudents] = useState([]);
   const [loadingDoc, setLoadingDoc] = useState(Boolean(id));
   const [savingDoc, setSavingDoc] = useState(false);
   const [statusNotice, setStatusNotice] = useState(null);
+
+  // Snapshot ref to track unsaved changes
+  const lastSavedSnapshotRef = useRef(null);
 
   // Student vs Teacher view toggle (Teacher can preview student mode)
   const [previewStudentView, setPreviewStudentView] = useState(() => Boolean(isPracticeRequested));
@@ -186,16 +192,27 @@ export function SwaralipiPage({ mode }) {
           setAssignedStudentNames(Array.isArray(data.assignedStudentNames) ? data.assignedStudentNames : (data.studentName ? [data.studentName] : []));
           setCompletions(data.completions || {});
 
+          let loadedRows = [];
           if (data.rowsJson) {
             try {
               const parsed = JSON.parse(data.rowsJson);
               if (Array.isArray(parsed) && parsed.length > 0) {
+                loadedRows = parsed;
                 setRows(parsed);
               }
             } catch (err) {
               console.error('Failed to parse rowsJson:', err);
             }
           }
+
+          lastSavedSnapshotRef.current = JSON.stringify({
+            title: (data.title || '').trim(),
+            taal: data.taal || 'free',
+            scaleOffset: typeof data.scaleOffset === 'number' ? data.scaleOffset : 10,
+            bpm: data.bpm || 90,
+            rows: loadedRows,
+            assignedTo: Array.isArray(data.assignedTo) ? data.assignedTo : (data.studentId && data.studentId !== 'MULTI' ? [data.studentId] : [])
+          });
         } else if (!isCancelled) {
           setStatusNotice({ type: 'error', message: 'Swaralipi homework document not found.' });
         }
@@ -214,6 +231,21 @@ export function SwaralipiPage({ mode }) {
       isCancelled = true;
     };
   }, [id, mode]);
+
+  // Initialize snapshot for new composition
+  useEffect(() => {
+    if (mode === 'new') {
+      const beats = TAALS.free?.beats || 8;
+      lastSavedSnapshotRef.current = JSON.stringify({
+        title: '',
+        taal: 'free',
+        scaleOffset: 10,
+        bpm: 90,
+        rows: [createEmptyRow(beats), createEmptyRow(beats)],
+        assignedTo: []
+      });
+    }
+  }, [mode]);
 
   // Auto-center Mini Harmonium on Root Sa
   const centerKeyboardOnSa = useCallback(() => {
@@ -485,13 +517,58 @@ export function SwaralipiPage({ mode }) {
     setCursor({ r: rows.length, c: 0 });
   };
 
-  // Clear sheet confirmation
-  const handleClearSheet = () => {
-    if (window.confirm('Clear all swaras and lyrics in this sheet?')) {
-      const beats = TAALS[taal]?.beats || 8;
-      setRows([createEmptyRow(beats), createEmptyRow(beats)]);
-      setCursor({ r: 0, c: 0 });
+  // Check if current sheet has unsaved changes compared to last saved state
+  const hasUnsavedChanges = useCallback(() => {
+    if (!canEdit) return false;
+    const current = JSON.stringify({
+      title: title.trim(),
+      taal,
+      scaleOffset: Number(scaleOffset),
+      bpm: Number(bpm),
+      rows,
+      assignedTo: assignedTo || []
+    });
+
+    if (lastSavedSnapshotRef.current !== null) {
+      return current !== lastSavedSnapshotRef.current;
     }
+
+    const hasNotes = rows.some(r => r.some(c => c.swara || c.lyric));
+    const hasTitle = Boolean(title.trim());
+    return hasNotes || hasTitle;
+  }, [canEdit, title, taal, scaleOffset, bpm, rows, assignedTo]);
+
+  // Prevent accidental browser tab close or refresh
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedChanges()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Back to Dashboard with Confirmation if Unsaved
+  const handleBackNavigation = () => {
+    if (hasUnsavedChanges()) {
+      setIsLeaveModalOpen(true);
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
+  // Clear sheet confirmation modal trigger
+  const handleClearSheet = () => {
+    setIsClearModalOpen(true);
+  };
+
+  const handleConfirmClearSheet = () => {
+    const beats = TAALS[taal]?.beats || 8;
+    setRows([createEmptyRow(beats), createEmptyRow(beats)]);
+    setCursor({ r: 0, c: 0 });
+    setIsClearModalOpen(false);
   };
 
   // Save to Firestore
@@ -533,6 +610,14 @@ export function SwaralipiPage({ mode }) {
       if (!id || mode === 'new') {
         payload.createdAt = serverTimestamp();
         await setDoc(docRef, payload);
+        lastSavedSnapshotRef.current = JSON.stringify({
+          title: title.trim(),
+          taal,
+          scaleOffset: Number(scaleOffset),
+          bpm: Number(bpm),
+          rows,
+          assignedTo: assignedTo || []
+        });
         setStatusNotice({
           type: 'success',
           message: assignedTo.length > 0
@@ -544,6 +629,14 @@ export function SwaralipiPage({ mode }) {
         }, 1200);
       } else {
         await updateDoc(docRef, payload);
+        lastSavedSnapshotRef.current = JSON.stringify({
+          title: title.trim(),
+          taal,
+          scaleOffset: Number(scaleOffset),
+          bpm: Number(bpm),
+          rows,
+          assignedTo: assignedTo || []
+        });
         setStatusNotice({
           type: 'success',
           message: assignedTo.length > 0
@@ -678,7 +771,7 @@ export function SwaralipiPage({ mode }) {
       <header className="bg-gray-900/95 border-b border-gray-800 px-3 sm:px-5 py-2.5 sticky top-0 z-30 backdrop-blur-md flex flex-wrap items-center justify-between gap-2.5 no-print">
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={handleBackNavigation}
             className="p-1.5 rounded-xl bg-gray-800/80 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 transition-all active:scale-95"
             title="Back to Dashboard"
           >
@@ -1445,7 +1538,7 @@ export function SwaralipiPage({ mode }) {
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
         sheet={{
-          id: id || 'new',
+          id: id && id !== 'new' ? id : null,
           title,
           assignedTo,
           assignedStudentNames,
@@ -1458,11 +1551,45 @@ export function SwaralipiPage({ mode }) {
           setStatusNotice({
             type: 'success',
             message: updated.assignedTo?.length > 0
-              ? `Assigned to ${updated.assignedTo.length} student(s) successfully!`
+              ? `Assigned to ${updated.assignedTo.length} student(s) successfully! Click "Save Swaralipi" to finalize.`
               : 'Sheet saved to library (unassigned).'
           });
           setTimeout(() => setStatusNotice(null), 3000);
         }}
+      />
+
+      {/* Leave Without Saving Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isLeaveModalOpen}
+        onClose={() => setIsLeaveModalOpen(false)}
+        onConfirm={() => {
+          setIsLeaveModalOpen(false);
+          navigate('/dashboard');
+        }}
+        title="Leave Without Saving?"
+        message={`You have unsaved notations in "${title || 'স্বরলিপি'}". If you leave now, your changes will be discarded.`}
+        subMessage="Save your work before leaving to keep it in your Swaralipi library."
+        confirmText="Leave Without Saving"
+        cancelText="Keep Editing"
+        variant="warning"
+        sheetPreview={{
+          title,
+          taal: TAALS[taal]?.name || taal,
+          bpm
+        }}
+      />
+
+      {/* Clear Notes Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isClearModalOpen}
+        onClose={() => setIsClearModalOpen(false)}
+        onConfirm={handleConfirmClearSheet}
+        title="Clear All Notes?"
+        message="Are you sure you want to clear all swaras and lyrics from this sheet?"
+        subMessage="This will reset the entire notation grid back to empty beats."
+        confirmText="Clear All Notes"
+        cancelText="Cancel"
+        variant="danger"
       />
 
       {/* Print CSS overrides */}
