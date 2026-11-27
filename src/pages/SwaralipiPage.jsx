@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { useAuth } from '../context/AuthContext';
@@ -155,6 +155,12 @@ export function SwaralipiPage({ mode }) {
   const kbdScrollerRef = useRef(null);
   const rowsContainerRef = useRef(null);
   const exportContainerRef = useRef(null);
+
+  // Filter out any blank rows (no swara notations and no lyrics) for the clean portrait image export
+  const exportRows = useMemo(() => {
+    const nonEmpty = rows.filter(r => !isRowEmpty(r));
+    return nonEmpty.length > 0 ? nonEmpty : [rows[0] || createEmptyRow(TAALS[taal]?.beats || 8)];
+  }, [rows, taal]);
 
   // WhatsApp Image Export State
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -820,7 +826,7 @@ export function SwaralipiPage({ mode }) {
         const svg = rowEl.querySelector('.export-meend-svg');
         if (!svg) return;
         svg.innerHTML = '';
-        const row = rows[rIdx];
+        const row = exportRows[rIdx];
         if (!row) return;
 
         row.forEach((cell, cIdx) => {
@@ -877,15 +883,16 @@ export function SwaralipiPage({ mode }) {
         logging: false
       });
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-      if (!blob) throw new Error('Could not create image file');
+      // Generate JPEG blob for universal mobile/WhatsApp compatibility
+      const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+      if (!jpegBlob) throw new Error('Could not create JPEG image file');
 
       const safeTitle = (title || 'Swaralipi').trim().replace(/[/\\?%*:|"<>]/g, '_');
-      const fileName = `${safeTitle}-Alaapi.png`;
-      const file = new File([blob], fileName, { type: 'image/png' });
-      const imgUrl = URL.createObjectURL(blob);
+      const fileName = `${safeTitle}-Alaapi.jpg`;
+      const file = new File([jpegBlob], fileName, { type: 'image/jpeg' });
+      const imgUrl = URL.createObjectURL(jpegBlob);
 
-      // Try Native Web Share API with files (Supported on Android Chrome & iOS Safari)
+      // Try Native Web Share API with JPEG file (Supported on Android Chrome & iOS Safari)
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({
@@ -904,11 +911,13 @@ export function SwaralipiPage({ mode }) {
         }
       }
 
-      // Fallback for PC / unsupported mobile: Copy image to clipboard
+      // Generate PNG blob for clipboard copy (ClipboardItem strictly requires image/png in desktop browsers)
+      let pngBlob = null;
       try {
         if (navigator.clipboard && window.ClipboardItem) {
+          pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
           await navigator.clipboard.write([
-            new ClipboardItem({ 'image/png': blob })
+            new ClipboardItem({ 'image/png': pngBlob })
           ]);
           setCopiedToClipboard(true);
         }
@@ -916,7 +925,7 @@ export function SwaralipiPage({ mode }) {
         console.warn('Clipboard image write failed:', clipErr);
       }
 
-      setShareModalData({ blob, file, imgUrl, fileName });
+      setShareModalData({ blob: jpegBlob, pngBlob, file, imgUrl, fileName });
     } catch (err) {
       console.error('Error generating WhatsApp image:', err);
       setStatusNotice({ type: 'error', message: 'Failed to generate WhatsApp image: ' + err.message });
@@ -1124,8 +1133,9 @@ export function SwaralipiPage({ mode }) {
             ) : (
               <>
                 <WhatsAppIcon className="w-3.5 h-3.5 text-white shrink-0" />
-                <span className="hidden sm:inline">Share via WhatsApp</span>
-                <span className="sm:hidden">WhatsApp</span>
+                {/* <span className="hidden sm:inline">Share via WhatsApp</span> */}
+                {/* <span className="sm:hidden">Share</span> */}
+                <span>Share</span>
               </>
             )}
           </button>
@@ -1868,7 +1878,7 @@ export function SwaralipiPage({ mode }) {
                   className="w-full max-h-56 object-contain rounded-lg shadow-sm"
                 />
                 <div className="absolute bottom-3 right-3 px-2 py-0.5 bg-gray-900/90 text-[10px] font-bold text-white rounded-md backdrop-blur border border-gray-700">
-                  PNG Image (2x HD)
+                  JPEG Image (Portrait HD)
                 </div>
               </div>
 
@@ -1902,7 +1912,7 @@ export function SwaralipiPage({ mode }) {
                   className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/40 transition-all active:scale-95"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download Image (PNG)</span>
+                  <span>Download Image (JPEG)</span>
                 </button>
               </div>
 
@@ -1913,7 +1923,7 @@ export function SwaralipiPage({ mode }) {
                   try {
                     if (navigator.clipboard && window.ClipboardItem) {
                       await navigator.clipboard.write([
-                        new ClipboardItem({ 'image/png': shareModalData.blob })
+                        new ClipboardItem({ 'image/png': shareModalData.pngBlob || shareModalData.blob })
                       ]);
                       setCopiedToClipboard(true);
                     }
@@ -1943,28 +1953,32 @@ export function SwaralipiPage({ mode }) {
         </div>
       )}
 
-      {/* Hidden Off-Screen Container specifically for generating high-res WhatsApp Image */}
+      {/* Hidden Off-Screen Container specifically for generating high-res WhatsApp Portrait Image */}
       <div
         ref={exportContainerRef}
         style={{
           position: 'fixed',
           left: '-9999px',
           top: 0,
-          width: '1050px',
+          width: '800px',
+          minHeight: '1100px',
           backgroundColor: '#ffffff',
           color: '#111827',
-          padding: '36px 44px',
+          padding: '36px 36px 28px',
           boxSizing: 'border-box',
           zIndex: -999,
-          fontFamily: "'Noto Sans Bengali', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          fontFamily: "'Noto Sans Bengali', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between'
         }}
       >
         {/* Printable Score Header */}
-        <div className="border-b-2 border-purple-600 pb-4 mb-6">
-          <h1 className="text-3xl font-extrabold text-gray-900 font-bengali tracking-tight">
+        <div className="border-b-2 border-purple-600 pb-3 mb-5 shrink-0">
+          <h1 className="text-3xl font-extrabold text-gray-900 font-bengali tracking-tight pb-1">
             {title || 'স্বরলিপি'}
           </h1>
-          <div className="flex items-center gap-3 text-xs font-semibold text-gray-600 mt-2">
+          <div className="flex items-center gap-3 text-xs font-semibold text-gray-600 mt-1 flex-wrap">
             <span>তাল: <strong className="text-gray-900">{currentTaalObj.name}</strong></span>
             <span>•</span>
             <span>স্কেল: <strong className="text-gray-900">{SCALE_OPTIONS.find(s => s.value === scaleOffset)?.label}</strong></span>
@@ -1980,15 +1994,15 @@ export function SwaralipiPage({ mode }) {
         </div>
 
         {/* Rows Container */}
-        <div className="space-y-4">
-          {rows.map((row, rIdx) => (
+        <div className="space-y-4 flex-1">
+          {exportRows.map((row, rIdx) => (
             <div key={rIdx} className="export-swara-row-wrap pb-2 border-b border-dashed border-gray-300">
-              <div className="export-swara-row relative flex items-stretch gap-2 pt-1 min-w-full">
+              <div className="export-swara-row relative flex items-stretch gap-1.5 pt-1 min-w-full">
                 {/* Meend SVG Arc Layer */}
                 <svg className="export-meend-svg absolute top-[44px] left-0 w-full h-4 pointer-events-none overflow-visible z-10" />
 
                 {/* Line Index */}
-                <div className="w-6 text-xs font-bold text-gray-500 flex items-center justify-center shrink-0">
+                <div className="w-5 text-xs font-bold text-gray-500 flex items-center justify-center shrink-0">
                   {rIdx + 1}
                 </div>
 
@@ -2002,10 +2016,10 @@ export function SwaralipiPage({ mode }) {
                       )}
                       <div
                         data-c={cIdx}
-                        className="export-cell min-w-[50px] flex-1 bg-gray-50 border border-gray-300 rounded-xl p-1.5 flex flex-col items-center justify-between gap-1 select-none"
+                        className="export-cell min-w-[36px] flex-1 bg-gray-50 border border-gray-300 rounded-xl p-1 flex flex-col items-center justify-between gap-1 select-none"
                       >
                         {/* Swara Display with High / Low Octave Dots */}
-                        <div className="relative w-full h-8 mb-3 flex items-center justify-center font-bengali">
+                        <div className="relative w-full h-8 mb-2 flex items-center justify-center font-bengali">
                           {cell.swara ? (
                             <>
                               {cell.oct >= 1 && (
@@ -2013,7 +2027,7 @@ export function SwaralipiPage({ mode }) {
                                   •
                                 </span>
                               )}
-                              <span className="text-gray-900 font-bengali text-[22px] font-bold leading-none">
+                              <span className="text-gray-900 font-bengali text-[21px] font-bold leading-none">
                                 {cell.swara}
                               </span>
                               {cell.oct <= -1 && (
@@ -2028,7 +2042,7 @@ export function SwaralipiPage({ mode }) {
                         </div>
 
                         {/* Lyrics */}
-                        <div className="w-full border-t border-gray-300 pt-1 text-center text-xs text-gray-800 font-medium truncate min-h-[19px] font-bengali">
+                        <div className="w-full border-t border-gray-300 pt-1 text-center text-xs text-gray-800 font-medium truncate min-h-[18px] font-bengali">
                           {cell.lyric || ''}
                         </div>
                       </div>
@@ -2046,13 +2060,13 @@ export function SwaralipiPage({ mode }) {
         </div>
 
         {/* Footer with Website Link */}
-        <div className="mt-6 pt-3 border-t border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
+        <div className="mt-auto pt-3 border-t border-gray-200 flex items-center justify-between text-[11px] text-gray-500 shrink-0">
           <div>
             <span>Akarmatrik Swaralipi notation generated on Alaapi • Practice online with Harmonium & Pitch Monitor: </span>
             <span className="font-bold text-purple-700 font-sans">https://alaapi.web.app/tuner/</span>
           </div>
           <div className="font-medium text-gray-400">
-            {rows.length} {rows.length === 1 ? 'Line' : 'Lines'}
+            {exportRows.length} {exportRows.length === 1 ? 'Line' : 'Lines'}
           </div>
         </div>
       </div>
