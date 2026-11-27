@@ -78,6 +78,21 @@ function createEmptyRow(beats) {
   }));
 }
 
+// Checks if a row has zero swara notations and zero lyrics
+function isRowEmpty(row) {
+  if (!row) return true;
+  return row.every(cell => !cell.swara && (!cell.lyric || !cell.lyric.trim()));
+}
+
+// Automatically removes trailing empty rows beyond the minimum (default 2 lines)
+function pruneTrailingEmptyRows(currentRows, minRows = 2) {
+  const trimmed = [...currentRows];
+  while (trimmed.length > minRows && isRowEmpty(trimmed[trimmed.length - 1])) {
+    trimmed.pop();
+  }
+  return trimmed;
+}
+
 export function SwaralipiPage({ mode }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -388,21 +403,25 @@ export function SwaralipiPage({ mode }) {
   };
 
   // Cursor Movement
-  const advanceCursor = () => {
+  const advanceCursor = useCallback(() => {
     const beats = TAALS[taal]?.beats || 8;
     setCursor(prev => {
       if (prev.c + 1 < beats) {
         return { r: prev.r, c: prev.c + 1 };
       } else {
-        if (prev.r + 1 >= rows.length) {
-          setRows(r => [...r, createEmptyRow(beats)]);
-        }
-        return { r: prev.r + 1, c: 0 };
+        const nextR = prev.r + 1;
+        setRows(rList => {
+          if (nextR >= rList.length) {
+            return [...rList, createEmptyRow(beats)];
+          }
+          return rList;
+        });
+        return { r: nextR, c: 0 };
       }
     });
-  };
+  }, [taal]);
 
-  const retreatCursor = () => {
+  const retreatCursor = useCallback(() => {
     const beats = TAALS[taal]?.beats || 8;
     setCursor(prev => {
       if (prev.c > 0) {
@@ -412,20 +431,31 @@ export function SwaralipiPage({ mode }) {
       }
       return prev;
     });
-  };
+  }, [taal]);
 
   // Insert Note / Symbol into active cell
   const handleInsertNote = (swara, semi, oct) => {
     if (!canEdit) return;
 
+    const beats = TAALS[taal]?.beats || 8;
+    const curR = cursor.r;
+    const curC = cursor.c;
+
+    const nextC = curC + 1 < beats ? curC + 1 : 0;
+    const nextR = curC + 1 < beats ? curR : curR + 1;
+
     setRows(prevRows => {
       const next = prevRows.map(row => row.map(cell => ({ ...cell })));
-      const curr = next[cursor.r]?.[cursor.c];
+      while (next.length <= curR) {
+        next.push(createEmptyRow(beats));
+      }
+
+      const curr = next[curR]?.[curC];
       if (!curr) return prevRows;
 
       let glideFrom = null;
-      if (semi >= 0 && cursor.c > 0) {
-        const prev = next[cursor.r][cursor.c - 1];
+      if (semi >= 0 && curC > 0) {
+        const prev = next[curR][curC - 1];
         if (prev && prev.meend && prev.semi >= 0) {
           glideFrom = prev;
         }
@@ -436,46 +466,100 @@ export function SwaralipiPage({ mode }) {
       curr.oct = semi >= 0 ? oct : 0;
       if (semi < 0) curr.meend = false;
 
-      if (semi >= 0) {
-        const beatSec = 60 / bpm;
-        playPreviewTone(scaleOffset, semi, oct, Math.min(0.50, beatSec * 0.88), glideFrom);
+      // If moving to next beat requires a new line
+      if (nextR >= next.length) {
+        next.push(createEmptyRow(beats));
       }
 
       return next;
     });
 
-    advanceCursor();
+    setCursor({ r: nextR, c: nextC });
+
+    if (semi >= 0) {
+      const beatSec = 60 / bpm;
+      playPreviewTone(scaleOffset, semi, oct, Math.min(0.50, beatSec * 0.88), null);
+    }
   };
 
-  // Backspace / Erase active cell
-  const handleBackspace = () => {
+  // Backspace / Erase active cell with auto-deletion of empty lines 3 and onwards
+  const handleBackspace = useCallback(() => {
     if (!canEdit) return;
 
-    setRows(prevRows => {
-      const next = prevRows.map(row => row.map(cell => ({ ...cell })));
-      const curr = next[cursor.r]?.[cursor.c];
+    const beats = TAALS[taal]?.beats || 8;
 
-      if (curr && curr.swara) {
-        curr.swara = '';
-        curr.semi = null;
-        curr.meend = false;
-        return next;
+    let targetR = cursor.r;
+    let targetC = cursor.c;
+    let shouldRetreat = false;
+
+    const curr = rows[cursor.r]?.[cursor.c];
+
+    if (curr && curr.swara) {
+      // Clear note in active cell
+      targetR = cursor.r;
+      targetC = cursor.c;
+      shouldRetreat = false;
+    } else {
+      // Current cell is already empty -> retreat and clear previous cell
+      shouldRetreat = true;
+      if (targetC > 0) {
+        targetC = targetC - 1;
+      } else if (targetR > 0) {
+        targetR = targetR - 1;
+        targetC = beats - 1;
       }
+    }
 
-      // If already empty, retreat and clear
-      retreatCursor();
-      const beats = TAALS[taal]?.beats || 8;
-      const targetR = cursor.c > 0 ? cursor.r : Math.max(0, cursor.r - 1);
-      const targetC = cursor.c > 0 ? cursor.c - 1 : beats - 1;
+    // Build updated rows with target cell cleared
+    const next = rows.map((row, rIdx) =>
+      row.map((cell, cIdx) => {
+        if (rIdx === targetR && cIdx === targetC) {
+          return { ...cell, swara: '', semi: null, meend: false };
+        }
+        return { ...cell };
+      })
+    );
 
-      if (next[targetR]?.[targetC]) {
-        next[targetR][targetC].swara = '';
-        next[targetR][targetC].semi = null;
-        next[targetR][targetC].meend = false;
+    // Automatically prune empty rows from line 3 and onwards (preserving minimum 2 lines)
+    const pruned = pruneTrailingEmptyRows(next, 2);
+
+    // Adjust cursor cleanly
+    let nextCursorR = shouldRetreat ? targetR : cursor.r;
+    let nextCursorC = shouldRetreat ? targetC : cursor.c;
+
+    if (nextCursorR >= pruned.length) {
+      nextCursorR = Math.max(0, pruned.length - 1);
+      nextCursorC = beats - 1;
+    }
+
+    setRows(pruned);
+    setCursor({ r: nextCursorR, c: nextCursorC });
+  }, [canEdit, cursor, rows, taal]);
+
+  // Physical Keyboard Navigation & Backspace Support
+  useEffect(() => {
+    if (!canEdit) return;
+
+    const handleKeyDown = (e) => {
+      // If typing inside an input or textarea, let native text editing handle it
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
+
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        handleBackspace();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        retreatCursor();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        advanceCursor();
       }
-      return next;
-    });
-  };
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canEdit, handleBackspace, retreatCursor, advanceCursor]);
 
   // 1-Tap Meend Toggle
   const handleToggleMeend = () => {
