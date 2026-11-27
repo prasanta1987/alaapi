@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import html2canvas from 'html2canvas';
 import { useAuth } from '../context/AuthContext';
 import {
   db,
@@ -46,10 +47,26 @@ import {
   Keyboard,
   ChevronDown,
   ChevronUp,
-  Clock
+  Clock,
+  Share2,
+  Download,
+  Copy,
+  Check,
+  X,
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import { AssignSwaralipiModal } from '../components/AssignSwaralipiModal';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+
+// Clean WhatsApp Brand Icon SVG
+function WhatsAppIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.888 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.456 5.711 1.457h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+    </svg>
+  );
+}
 
 function createEmptyRow(beats) {
   return Array.from({ length: beats }, () => ({
@@ -122,6 +139,12 @@ export function SwaralipiPage({ mode }) {
   const sheetContainerRef = useRef(null);
   const kbdScrollerRef = useRef(null);
   const rowsContainerRef = useRef(null);
+  const exportContainerRef = useRef(null);
+
+  // WhatsApp Image Export State
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [shareModalData, setShareModalData] = useState(null);
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
 
   // Auto-scroll to top when page mounts
   useEffect(() => {
@@ -662,15 +685,15 @@ export function SwaralipiPage({ mode }) {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'swaralipi', id);
       const updatedCompletion = !isDone
         ? {
-            completed: true,
-            completedAt: new Date().toISOString(),
-            studentName: userProfile?.displayName || currentUser.displayName || 'Student'
-          }
+          completed: true,
+          completedAt: new Date().toISOString(),
+          studentName: userProfile?.displayName || currentUser.displayName || 'Student'
+        }
         : {
-            completed: false,
-            uncompletedAt: new Date().toISOString(),
-            studentName: userProfile?.displayName || currentUser.displayName || 'Student'
-          };
+          completed: false,
+          uncompletedAt: new Date().toISOString(),
+          studentName: userProfile?.displayName || currentUser.displayName || 'Student'
+        };
 
       await updateDoc(docRef, {
         [`completions.${currentUser.uid}`]: updatedCompletion,
@@ -692,6 +715,129 @@ export function SwaralipiPage({ mode }) {
       setStatusNotice({ type: 'error', message: 'Failed to update status: ' + err.message });
     } finally {
       setIsUpdatingPractice(false);
+    }
+  };
+
+  // Share Swaralipi as High-Resolution Compatible Image File via WhatsApp
+  const handleShareWhatsApp = async () => {
+    if (!exportContainerRef.current) return;
+    setIsGeneratingImage(true);
+    setCopiedToClipboard(false);
+
+    try {
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
+      // Compute Meends specifically for the export container
+      const exportContainer = exportContainerRef.current;
+      const exportRowElements = exportContainer.querySelectorAll('.export-swara-row');
+      exportRowElements.forEach((rowEl, rIdx) => {
+        const svg = rowEl.querySelector('.export-meend-svg');
+        if (!svg) return;
+        svg.innerHTML = '';
+        const row = rows[rIdx];
+        if (!row) return;
+
+        row.forEach((cell, cIdx) => {
+          if (!cell.meend) return;
+          const startEl = rowEl.querySelector(`.export-cell[data-c="${cIdx}"]`);
+          if (!startEl) return;
+
+          let targetIdx = -1;
+          for (let j = cIdx + 1; j < row.length; j++) {
+            if (row[j].semi !== null && row[j].semi >= 0) {
+              targetIdx = j;
+              break;
+            }
+          }
+
+          const x1 = startEl.offsetLeft + startEl.offsetWidth / 2;
+
+          if (targetIdx !== -1) {
+            const endEl = rowEl.querySelector(`.export-cell[data-c="${targetIdx}"]`);
+            if (!endEl) return;
+            const x2 = endEl.offsetLeft + endEl.offsetWidth / 2;
+            const midX = (x1 + x2) / 2;
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', `M ${x1},2 Q ${midX},16 ${x2},2`);
+            path.setAttribute('stroke', '#d97706');
+            path.setAttribute('stroke-width', '2.5');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke-linecap', 'round');
+            svg.appendChild(path);
+          } else if (cIdx + 1 < row.length) {
+            const nextEl = rowEl.querySelector(`.export-cell[data-c="${cIdx + 1}"]`);
+            if (!nextEl) return;
+            const x2 = nextEl.offsetLeft + nextEl.offsetWidth / 2;
+            const midX = (x1 + x2) / 2;
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', `M ${x1},2 Q ${midX},14 ${x2},2`);
+            path.setAttribute('stroke', '#d97706');
+            path.setAttribute('stroke-width', '2.5');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-dasharray', '4 3');
+            svg.appendChild(path);
+          }
+        });
+      });
+
+      // Allow DOM to settle
+      await new Promise(r => setTimeout(r, 80));
+
+      const canvas = await html2canvas(exportContainer, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+      });
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Could not create image file');
+
+      const safeTitle = (title || 'Swaralipi').trim().replace(/[/\\?%*:|"<>]/g, '_');
+      const fileName = `${safeTitle}-Alaapi.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      const imgUrl = URL.createObjectURL(blob);
+
+      // Try Native Web Share API with files (Supported on Android Chrome & iOS Safari)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: title || 'স্বরলিপি',
+            text: `🎶 ${title || 'স্বরলিপি'} (${currentTaalObj.name}, ${SCALE_OPTIONS.find(s => s.value === scaleOffset)?.label || ''}) — Alaapi Music Studio`
+          });
+          setIsGeneratingImage(false);
+          return;
+        } catch (shareErr) {
+          if (shareErr.name === 'AbortError') {
+            setIsGeneratingImage(false);
+            return;
+          }
+          console.warn('Native share error, falling back to modal:', shareErr);
+        }
+      }
+
+      // Fallback for PC / unsupported mobile: Copy image to clipboard
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ]);
+          setCopiedToClipboard(true);
+        }
+      } catch (clipErr) {
+        console.warn('Clipboard image write failed:', clipErr);
+      }
+
+      setShareModalData({ blob, file, imgUrl, fileName });
+    } catch (err) {
+      console.error('Error generating WhatsApp image:', err);
+      setStatusNotice({ type: 'error', message: 'Failed to generate WhatsApp image: ' + err.message });
+    } finally {
+      setIsGeneratingImage(false);
     }
   };
 
@@ -746,11 +892,10 @@ export function SwaralipiPage({ mode }) {
       {/* Toast Notice */}
       {statusNotice && (
         <div
-          className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold border backdrop-blur-md ${
-            statusNotice.type === 'error'
-              ? 'bg-red-950/90 border-red-500/60 text-red-200'
-              : 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
-          }`}
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold border backdrop-blur-md ${statusNotice.type === 'error'
+            ? 'bg-red-950/90 border-red-500/60 text-red-200'
+            : 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
+            }`}
         >
           {statusNotice.type === 'error' ? (
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
@@ -870,35 +1015,45 @@ export function SwaralipiPage({ mode }) {
           {/* Play / Stop Button */}
           <button
             onClick={handleTogglePlay}
-            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${
-              isPlaying
-                ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/40 animate-pulse'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40'
-            }`}
+            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${isPlaying
+              ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/40 animate-pulse'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40'
+              }`}
           >
             {isPlaying ? <Square className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
             <span>{isPlaying ? 'Stop' : 'Play'}</span>
           </button>
 
-          {/* White-Paper Print Button */}
+          {/* Share via WhatsApp as Compatible Image File */}
           <button
-            onClick={() => window.print()}
-            className="px-2.5 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700 flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
-            title="Print sheet to crisp white paper (Ctrl+P / Cmd+P)"
+            onClick={handleShareWhatsApp}
+            disabled={isGeneratingImage}
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-bold border border-emerald-500/80 flex items-center gap-1.5 active:scale-95 transition-all shadow-md shadow-emerald-950/40 disabled:opacity-50"
+            title="Share this Swaralipi sheet as a compatible image file on WhatsApp"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Print</span>
+            {isGeneratingImage ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span className="hidden xs:inline">Generating...</span>
+                <span className="xs:hidden">...</span>
+              </>
+            ) : (
+              <>
+                <WhatsAppIcon className="w-3.5 h-3.5 text-white shrink-0" />
+                <span className="hidden sm:inline">Share via WhatsApp</span>
+                <span className="sm:hidden">WhatsApp</span>
+              </>
+            )}
           </button>
 
           {/* Teacher Student Mode Preview Toggle */}
           {isTeacher && isAuthor && (
             <button
               onClick={() => setPreviewStudentView(prev => !prev)}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all active:scale-95 ${
-                previewStudentView
-                  ? 'bg-purple-900/60 border-purple-500 text-purple-200'
-                  : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-              }`}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-all active:scale-95 ${previewStudentView
+                ? 'bg-purple-900/60 border-purple-500 text-purple-200'
+                : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+                }`}
               title={previewStudentView ? 'Back to Composer Edit' : 'Preview Student Practice View'}
             >
               {previewStudentView ? <Edit3 className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -911,11 +1066,10 @@ export function SwaralipiPage({ mode }) {
             <button
               onClick={handleToggleStudentPractice}
               disabled={isUpdatingPractice}
-              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${
-                completions[currentUser?.uid]?.completed
-                  ? 'bg-emerald-950/90 border border-emerald-500/70 text-emerald-300 hover:bg-emerald-900/80 shadow-emerald-950/40'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40'
-              }`}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${completions[currentUser?.uid]?.completed
+                ? 'bg-emerald-950/90 border border-emerald-500/70 text-emerald-300 hover:bg-emerald-900/80 shadow-emerald-950/40'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40'
+                }`}
               title={
                 completions[currentUser?.uid]?.completed
                   ? 'Click to unmark practice completion'
@@ -941,8 +1095,8 @@ export function SwaralipiPage({ mode }) {
                 {savingDoc
                   ? 'Saving...'
                   : assignedTo.length > 0
-                  ? 'Save & Assign'
-                  : 'Save to Library'}
+                    ? 'Save & Assign'
+                    : 'Save to Library'}
               </span>
             </button>
           )}
@@ -952,9 +1106,8 @@ export function SwaralipiPage({ mode }) {
       {/* Main Sheet Container */}
       <div
         ref={sheetContainerRef}
-        className={`flex-1 w-full max-w-4xl mx-auto p-3 sm:p-6 transition-all duration-200 ${
-          canEdit && showKeypad ? 'pb-72 sm:pb-80' : 'pb-16'
-        }`}
+        className={`flex-1 w-full max-w-4xl mx-auto p-3 sm:p-6 transition-all duration-200 ${canEdit && showKeypad ? 'pb-72 sm:pb-80' : 'pb-16'
+          }`}
       >
         {/* Homework Metadata Bar: Single Line Row */}
         <div className="bg-gray-900/80 border border-gray-800/90 rounded-2xl p-2 sm:p-3 mb-4 flex items-center justify-between gap-2 shadow-lg no-print flex-nowrap">
@@ -980,19 +1133,28 @@ export function SwaralipiPage({ mode }) {
           {/* Teacher Student Assignment Controls & Toggle Panel Button */}
           {canEdit && (
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Assign to Students Button (Opens Modal) */}
+              {/* Assign to Students Button (Opens Modal) - Icon only on mobile, text on sm+ */}
               <button
                 type="button"
                 onClick={() => setIsAssignModalOpen(true)}
                 className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/60 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shrink-0"
-                title="Assign this Swaralipi to students"
+                title={
+                  assignedTo.length === 0
+                    ? 'Assign Students'
+                    : `Assigned to ${assignedTo.length} student${assignedTo.length > 1 ? 's' : ''}`
+                }
               >
                 <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span>
+                <span className="hidden sm:inline">
                   {assignedTo.length === 0
                     ? 'Assign Students'
                     : `Assigned (${assignedTo.length})`}
                 </span>
+                {assignedTo.length > 0 && (
+                  <span className="sm:hidden text-[10px] bg-purple-500/40 px-1 rounded-full text-purple-200 font-bold">
+                    {assignedTo.length}
+                  </span>
+                )}
               </button>
 
               {/* Practice Progress Pill */}
@@ -1002,11 +1164,10 @@ export function SwaralipiPage({ mode }) {
                   <button
                     type="button"
                     onClick={() => setIsAssignModalOpen(true)}
-                    className={`px-2 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1 transition-all shrink-0 ${
-                      doneCount > 0
-                        ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/80'
-                        : 'bg-gray-950/80 border-gray-800 text-gray-400 hover:text-gray-300'
-                    }`}
+                    className={`px-2 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1 transition-all shrink-0 ${doneCount > 0
+                      ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/80'
+                      : 'bg-gray-950/80 border-gray-800 text-gray-400 hover:text-gray-300'
+                      }`}
                     title="Click to view student practice status"
                   >
                     <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -1023,21 +1184,6 @@ export function SwaralipiPage({ mode }) {
               >
                 <Plus className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden xs:inline">Add Line</span>
-              </button>
-
-              {/* Show / Hide Typing Panel Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setShowKeypad(prev => !prev)}
-                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shrink-0 ${
-                  showKeypad
-                    ? 'bg-purple-950/60 border-purple-500/60 text-purple-300'
-                    : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-                }`}
-                title={showKeypad ? 'Hide Typing Panel' : 'Show Typing Panel'}
-              >
-                <Keyboard className="w-3.5 h-3.5 shrink-0 text-purple-400" />
-                <span className="hidden sm:inline">{showKeypad ? 'Hide Panel' : 'Show Panel'}</span>
               </button>
 
               <button
@@ -1122,17 +1268,14 @@ export function SwaralipiPage({ mode }) {
                           onClick={() => {
                             if (canEdit) setCursor({ r: rIdx, c: cIdx });
                           }}
-                          className={`cell min-w-[48px] max-w-[76px] flex-1 bg-gray-950 border rounded-xl p-1.5 flex flex-col items-center justify-between gap-1 transition-all select-none print:bg-white print:border-gray-300 ${
-                            canEdit ? 'cursor-pointer hover:border-gray-600' : 'cursor-default'
-                          } ${
-                            isActive
+                          className={`cell min-w-[48px] max-w-[76px] flex-1 bg-gray-950 border rounded-xl p-1.5 flex flex-col items-center justify-between gap-1 transition-all select-none print:bg-white print:border-gray-300 ${canEdit ? 'cursor-pointer hover:border-gray-600' : 'cursor-default'
+                            } ${isActive
                               ? 'border-purple-400 bg-purple-950/20 ring-2 ring-purple-500/30'
                               : 'border-gray-800'
-                          } ${
-                            isCellPlaying
+                            } ${isCellPlaying
                               ? 'border-emerald-400 bg-emerald-950/30 scale-105 shadow-md shadow-emerald-900/30'
                               : ''
-                          }`}
+                            }`}
                         >
                           {/* Swara Display with High (Tara) / Low (Mandra) Octave Dots */}
                           <div className="relative w-full h-8 mb-3.5 flex items-center justify-center font-bengali select-none print:text-black">
@@ -1198,11 +1341,10 @@ export function SwaralipiPage({ mode }) {
       {/* Sticky Bottom Dock: Harmonium Keyboard <-> Bengali Swara Pad (Teacher Composer Mode Only) */}
       {canEdit && (
         <div
-          className={`fixed bottom-0 left-0 right-0 bg-gray-900/98 border-t border-gray-700/80 backdrop-blur-md px-2.5 pt-2 pb-[calc(10px+env(safe-area-inset-bottom,0px))] z-40 shadow-2xl no-print transition-all duration-300 ease-in-out transform ${
-            showKeypad
-              ? 'translate-y-0 opacity-100 pointer-events-auto'
-              : 'translate-y-full opacity-0 pointer-events-none'
-          }`}
+          className={`fixed bottom-0 left-0 right-0 bg-gray-900/98 border-t border-gray-700/80 backdrop-blur-md px-2.5 pt-2 pb-[calc(10px+env(safe-area-inset-bottom,0px))] z-40 shadow-2xl no-print transition-all duration-300 ease-in-out transform ${showKeypad
+            ? 'translate-y-0 opacity-100 pointer-events-auto'
+            : 'translate-y-full opacity-0 pointer-events-none'
+            }`}
         >
           <div className="max-w-4xl mx-auto flex flex-col gap-2">
             {/* Dock Header Toolbar */}
@@ -1212,22 +1354,20 @@ export function SwaralipiPage({ mode }) {
                 <button
                   type="button"
                   onClick={() => setKeypadMode('kbd')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                    keypadMode === 'kbd'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${keypadMode === 'kbd'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-white'
+                    }`}
                 >
                   🎹 Keyboard
                 </button>
                 <button
                   type="button"
                   onClick={() => setKeypadMode('pad')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                    keypadMode === 'pad'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${keypadMode === 'pad'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-white'
+                    }`}
                 >
                   স্বর Pad
                 </button>
@@ -1239,11 +1379,10 @@ export function SwaralipiPage({ mode }) {
                 <button
                   type="button"
                   onClick={handleToggleMeend}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1 border transition-all active:scale-95 ${
-                    isMeendArmed()
-                      ? 'bg-amber-500 text-gray-950 border-amber-300 shadow-md shadow-amber-500/40'
-                      : 'bg-amber-950/30 text-amber-300 border-amber-500/40 hover:bg-amber-900/40'
-                  }`}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1 border transition-all active:scale-95 ${isMeendArmed()
+                    ? 'bg-amber-500 text-gray-950 border-amber-300 shadow-md shadow-amber-500/40'
+                    : 'bg-amber-950/30 text-amber-300 border-amber-500/40 hover:bg-amber-900/40'
+                    }`}
                   title="Toggle Meend glide on current or previous note"
                 >
                   <span>◡ মীড়</span>
@@ -1341,13 +1480,12 @@ export function SwaralipiPage({ mode }) {
                               flashKey(k.midi);
                             }}
                             style={{ left: `${k.leftPx}px` }}
-                            className={`black-key absolute top-1 w-[30px] h-[82px] rounded-b-lg z-20 flex flex-col justify-end items-center pb-2 transition-transform active:scale-95 shadow-lg border select-none ${
-                              k.isSa
-                                ? 'bg-gradient-to-b from-purple-700 to-purple-900 border-purple-300 text-white'
-                                : pressedMidi === k.midi
+                            className={`black-key absolute top-1 w-[30px] h-[82px] rounded-b-lg z-20 flex flex-col justify-end items-center pb-2 transition-transform active:scale-95 shadow-lg border select-none ${k.isSa
+                              ? 'bg-gradient-to-b from-purple-700 to-purple-900 border-purple-300 text-white'
+                              : pressedMidi === k.midi
                                 ? 'bg-gradient-to-b from-purple-500 to-purple-800 border-purple-400 text-white'
                                 : 'bg-gradient-to-b from-gray-800 to-gray-950 border-gray-600 text-gray-200'
-                            }`}
+                              }`}
                           >
                             <div className="relative w-full h-[32px] flex items-center justify-center font-bengali">
                               {k.oct >= 1 && (
@@ -1379,13 +1517,12 @@ export function SwaralipiPage({ mode }) {
                             handleInsertNote(k.swara, k.semi, k.oct);
                             flashKey(k.midi);
                           }}
-                          className={`white-key w-[44px] h-[128px] mr-[2px] rounded-b-xl flex flex-col justify-end items-center pb-2.5 transition-transform active:scale-95 border shrink-0 select-none ${
-                            k.isSa
-                              ? 'bg-gradient-to-b from-purple-100 to-purple-300 border-purple-600 text-purple-950'
-                              : pressedMidi === k.midi
+                          className={`white-key w-[44px] h-[128px] mr-[2px] rounded-b-xl flex flex-col justify-end items-center pb-2.5 transition-transform active:scale-95 border shrink-0 select-none ${k.isSa
+                            ? 'bg-gradient-to-b from-purple-100 to-purple-300 border-purple-600 text-purple-950'
+                            : pressedMidi === k.midi
                               ? 'bg-gradient-to-b from-purple-300 to-purple-500 border-purple-600 text-white'
                               : 'bg-gradient-to-b from-white to-gray-200 border-gray-400 text-gray-900'
-                          }`}
+                            }`}
                         >
                           <div className="relative w-full h-[36px] flex items-center justify-center font-bengali">
                             {k.oct >= 1 && (
@@ -1394,9 +1531,8 @@ export function SwaralipiPage({ mode }) {
                               </span>
                             )}
                             <span
-                              className={`text-[16px] font-bold leading-none font-bengali ${
-                                k.isSa ? 'text-purple-900 font-black' : 'text-slate-900'
-                              }`}
+                              className={`text-[16px] font-bold leading-none font-bengali ${k.isSa ? 'text-purple-900 font-black' : 'text-slate-900'
+                                }`}
                             >
                               {k.swara}
                             </span>
@@ -1407,9 +1543,8 @@ export function SwaralipiPage({ mode }) {
                             )}
                           </div>
                           <span
-                            className={`text-[9px] font-mono font-semibold mt-0.5 leading-none ${
-                              k.isSa ? 'text-purple-900 opacity-80' : 'text-slate-600 opacity-80'
-                            }`}
+                            className={`text-[9px] font-mono font-semibold mt-0.5 leading-none ${k.isSa ? 'text-purple-900 opacity-80' : 'text-slate-600 opacity-80'
+                              }`}
                           >
                             {k.western}
                           </span>
@@ -1429,27 +1564,24 @@ export function SwaralipiPage({ mode }) {
                   <button
                     type="button"
                     onClick={() => setCurrentOctave(-1)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                      currentOctave === -1 ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
-                    }`}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold ${currentOctave === -1 ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
                   >
                     মন্দ্র (Low •)
                   </button>
                   <button
                     type="button"
                     onClick={() => setCurrentOctave(0)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                      currentOctave === 0 ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
-                    }`}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold ${currentOctave === 0 ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
                   >
                     মধ্য (Mid)
                   </button>
                   <button
                     type="button"
                     onClick={() => setCurrentOctave(1)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                      currentOctave === 1 ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
-                    }`}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold ${currentOctave === 1 ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
                   >
                     তারা (High •)
                   </button>
@@ -1494,11 +1626,10 @@ export function SwaralipiPage({ mode }) {
                       key={k.swara}
                       type="button"
                       onClick={() => handleInsertNote(k.swara, k.semi, currentOctave)}
-                      className={`border rounded-xl py-2 flex flex-col items-center justify-center font-bold text-base font-bengali active:scale-95 transition-all shadow ${
-                        k.isKomal
-                          ? 'bg-purple-950/40 border-purple-500/40 text-purple-200'
-                          : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                      }`}
+                      className={`border rounded-xl py-2 flex flex-col items-center justify-center font-bold text-base font-bengali active:scale-95 transition-all shadow ${k.isKomal
+                        ? 'bg-purple-950/40 border-purple-500/40 text-purple-200'
+                        : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                        }`}
                     >
                       <span>{k.swara}</span>
                       <span className="text-[8px] font-sans opacity-70">{k.western}</span>
@@ -1514,11 +1645,10 @@ export function SwaralipiPage({ mode }) {
       {/* Floating Button to Re-Open Typing Panel when Hidden */}
       {canEdit && (
         <div
-          className={`fixed bottom-4 right-4 z-40 no-print transition-all duration-300 ease-in-out transform ${
-            !showKeypad
-              ? 'translate-y-0 opacity-100 pointer-events-auto scale-100'
-              : 'translate-y-12 opacity-0 pointer-events-none scale-90'
-          }`}
+          className={`fixed bottom-4 right-4 z-40 no-print transition-all duration-300 ease-in-out transform ${!showKeypad
+            ? 'translate-y-0 opacity-100 pointer-events-auto scale-100'
+            : 'translate-y-12 opacity-0 pointer-events-none scale-90'
+            }`}
         >
           <button
             type="button"
@@ -1591,6 +1721,257 @@ export function SwaralipiPage({ mode }) {
         cancelText="Cancel"
         variant="danger"
       />
+
+      {/* Share via WhatsApp Modal (Desktop & Fallback Flow) */}
+      {shareModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+            onClick={() => setShareModalData(null)}
+          />
+
+          {/* Modal Card */}
+          <div className="relative z-10 bg-gray-900 border border-gray-700/80 rounded-3xl max-w-lg w-full shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-fadeIn">
+            {/* Header */}
+            <div className="shrink-0 p-4 sm:px-6 border-b border-gray-800 bg-gray-950/50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-950 border border-emerald-500/50 flex items-center justify-center text-emerald-400">
+                  <WhatsAppIcon className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Share Swaralipi via WhatsApp</h3>
+                  <p className="text-xs text-gray-400">High-resolution image ready to send</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareModalData(null)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-gray-800 transition-colors"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4 custom-scrollbar">
+              {/* Clipboard Status Banner */}
+              {copiedToClipboard ? (
+                <div className="p-3 bg-emerald-950/80 border border-emerald-500/60 rounded-2xl text-xs text-emerald-300 flex items-start gap-2.5 shadow-sm">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Image copied to your clipboard!</p>
+                    <p className="text-emerald-400/90 text-[11px] mt-0.5 leading-relaxed">
+                      Open WhatsApp Web below, choose your student or group chat, and simply press <strong>Ctrl + V</strong> (or Command + V) to paste and send the image instantly.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-purple-950/40 border border-purple-500/30 rounded-2xl text-xs text-purple-200 flex items-center gap-2.5">
+                  <WhatsAppIcon className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <p className="text-[11px] leading-relaxed">
+                    Open WhatsApp Web below, then drag-and-drop the downloaded image or paste it into your student or group chat.
+                  </p>
+                </div>
+              )}
+
+              {/* High-Res Sheet Image Preview */}
+              <div className="relative rounded-2xl border border-gray-700 bg-white p-2.5 overflow-hidden shadow-inner flex flex-col items-center justify-center">
+                <img
+                  src={shareModalData.imgUrl}
+                  alt="Swaralipi Sheet Preview"
+                  className="w-full max-h-56 object-contain rounded-lg shadow-sm"
+                />
+                <div className="absolute bottom-3 right-3 px-2 py-0.5 bg-gray-900/90 text-[10px] font-bold text-white rounded-md backdrop-blur border border-gray-700">
+                  PNG Image (2x HD)
+                </div>
+              </div>
+
+              {/* Primary Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                {/* Open WhatsApp Web */}
+                <a
+                  href={`https://web.whatsapp.com/send?text=${encodeURIComponent(
+                    `🎶 *${title || 'স্বরলিপি'}*\nতাল: ${currentTaalObj.name} | স্কেল: ${SCALE_OPTIONS.find(s => s.value === scaleOffset)?.label || ''}\nআলাপী মিউজিক স্টুডিও`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-bold shadow-lg shadow-emerald-950/40 transition-all active:scale-95"
+                >
+                  <WhatsAppIcon className="w-4 h-4" />
+                  <span>Open WhatsApp Web</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                </a>
+
+                {/* Download Image Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = shareModalData.imgUrl;
+                    a.download = shareModalData.fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/40 transition-all active:scale-95"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Image (PNG)</span>
+                </button>
+              </div>
+
+              {/* Secondary Action: Copy Image to Clipboard */}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    if (navigator.clipboard && window.ClipboardItem) {
+                      await navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': shareModalData.blob })
+                      ]);
+                      setCopiedToClipboard(true);
+                    }
+                  } catch (err) {
+                    console.warn("Clipboard copy failed:", err);
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700 transition-all"
+              >
+                {copiedToClipboard ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedToClipboard ? 'Copied to Clipboard! (Press Ctrl+V in WhatsApp)' : 'Copy Image to Clipboard'}</span>
+              </button>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="shrink-0 p-3 sm:px-6 border-t border-gray-800 bg-gray-950/60 flex items-center justify-between text-xs text-gray-400">
+              <span className="truncate max-w-[280px] font-mono text-[11px]">{shareModalData.fileName}</span>
+              <button
+                type="button"
+                onClick={() => setShareModalData(null)}
+                className="text-gray-300 hover:text-white font-semibold px-2 py-1 rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden Off-Screen Container specifically for generating high-res WhatsApp Image */}
+      <div
+        ref={exportContainerRef}
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: 0,
+          width: '1050px',
+          backgroundColor: '#ffffff',
+          color: '#111827',
+          padding: '36px 44px',
+          boxSizing: 'border-box',
+          zIndex: -999,
+          fontFamily: "'Noto Sans Bengali', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        }}
+      >
+        {/* Printable Score Header */}
+        <div className="border-b-2 border-purple-600 pb-4 mb-6">
+          <h1 className="text-3xl font-extrabold text-gray-900 font-bengali tracking-tight">
+            {title || 'স্বরলিপি'}
+          </h1>
+          <div className="flex items-center gap-3 text-xs font-semibold text-gray-600 mt-2">
+            <span>তাল: <strong className="text-gray-900">{currentTaalObj.name}</strong></span>
+            <span>•</span>
+            <span>স্কেল: <strong className="text-gray-900">{SCALE_OPTIONS.find(s => s.value === scaleOffset)?.label}</strong></span>
+            <span>•</span>
+            <span>লয়: <strong className="text-gray-900">{bpm} BPM</strong></span>
+            {teacherName && (
+              <>
+                <span>•</span>
+                <span>শিক্ষক: <strong className="text-gray-900">{teacherName}</strong></span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Rows Container */}
+        <div className="space-y-4">
+          {rows.map((row, rIdx) => (
+            <div key={rIdx} className="export-swara-row-wrap pb-2 border-b border-dashed border-gray-300">
+              <div className="export-swara-row relative flex items-stretch gap-2 pt-1 min-w-full">
+                {/* Meend SVG Arc Layer */}
+                <svg className="export-meend-svg absolute top-[44px] left-0 w-full h-4 pointer-events-none overflow-visible z-10" />
+
+                {/* Line Index */}
+                <div className="w-6 text-xs font-bold text-gray-500 flex items-center justify-center shrink-0">
+                  {rIdx + 1}
+                </div>
+
+                {/* Cells */}
+                {row.map((cell, cIdx) => {
+                  const isBarLine = currentTaalObj.bars.includes(cIdx);
+                  return (
+                    <React.Fragment key={cIdx}>
+                      {isBarLine && (
+                        <div className="w-[3px] bg-purple-700 my-1 rounded shrink-0" />
+                      )}
+                      <div
+                        data-c={cIdx}
+                        className="export-cell min-w-[50px] flex-1 bg-gray-50 border border-gray-300 rounded-xl p-1.5 flex flex-col items-center justify-between gap-1 select-none"
+                      >
+                        {/* Swara Display with High / Low Octave Dots */}
+                        <div className="relative w-full h-8 mb-3 flex items-center justify-center font-bengali">
+                          {cell.swara ? (
+                            <>
+                              {cell.oct >= 1 && (
+                                <span className="absolute top-0 left-1/2 -translate-x-1/2 text-[13px] text-purple-700 leading-none font-black">
+                                  •
+                                </span>
+                              )}
+                              <span className="text-gray-900 font-bengali text-[22px] font-bold leading-none">
+                                {cell.swara}
+                              </span>
+                              {cell.oct <= -1 && (
+                                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[13px] text-blue-700 leading-none font-black">
+                                  •
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-gray-300 text-sm leading-none">·</span>
+                          )}
+                        </div>
+
+                        {/* Lyrics */}
+                        <div className="w-full border-t border-gray-300 pt-1 text-center text-xs text-gray-800 font-medium truncate min-h-[19px] font-bengali">
+                          {cell.lyric || ''}
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* Taal End Double Bar */}
+                {taal !== 'free' && (
+                  <div className="w-2 my-1 border-l-2 border-r-2 border-purple-700 shrink-0" />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer with Website Link */}
+        <div className="mt-6 pt-3 border-t border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
+          <div>
+            <span>Akarmatrik Swaralipi notation generated on Alaapi • Practice online with Harmonium & Pitch Monitor: </span>
+            <span className="font-bold text-purple-700 font-sans">https://alaapi.web.app/tuner/</span>
+          </div>
+          <div className="font-medium text-gray-400">
+            {rows.length} {rows.length === 1 ? 'Line' : 'Lines'}
+          </div>
+        </div>
+      </div>
 
       {/* Print CSS overrides */}
       <style>{`
